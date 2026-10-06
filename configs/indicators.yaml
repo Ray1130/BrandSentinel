@@ -1,0 +1,175 @@
+# Cấu hình 11 chỉ báo rủi ro (I1-I11). Đọc bởi core/config.py -> detection/ và scoring/.
+#
+# Quy ước:
+#  - Trọng số w_i KHÔNG ghi tay. scoring/weights.py tính:
+#      w_i = priority_points[i] / tổng priority_points của các chỉ báo (enabled và in_score)
+#    => tổng w_i = 1 tự động, chỉ I1-I9 (I10, I11 là cờ, in_score=false).
+#    Với bộ mặc định: (1+1+2+3+2+2+3+5+2) = 21  ->  w = 1/21, 1/21, 2/21, 3/21, 2/21, 2/21, 3/21, 5/21, 2/21.
+#  - trigger {k, m, n}: robust z (so với baseline SKU/ngành) vượt k trong ít nhất m trong n cửa sổ gần nhất.
+#    direction "up" = z > k; "down" = z < -k.
+#  - Mọi giá trị là CẤU HÌNH KHỞI TẠO, được rà soát trên dữ liệu baseline (không phải ngưỡng phổ quát).
+
+version: 1
+
+# Mức ưu tiên nghiệp vụ -> điểm (xem Bảng 4-7 trong thuyết minh)
+priority_points:
+  low: 1        # Thấp
+  medium: 2     # Trung bình
+  high: 3       # Cao
+  very_high: 5  # Rất cao
+
+groups: [volume, rating, content, flag]
+
+indicators:
+  # ---------------- Nhóm tần suất và diễn biến thời gian ----------------
+  I1:
+    name: Đột biến lượng review sau khử mùa vụ
+    group: volume
+    priority: low
+    enabled: true
+    in_score: true
+    method: stl_residual_z
+    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    params:
+      series: log1p_daily_count       # chuỗi đầu vào của STL
+      use_stl: true                   # tham số STL chi tiết ở default.yaml -> stl
+
+  I2:
+    name: Tốc độ tăng review bất thường
+    group: volume
+    priority: low
+    enabled: true
+    in_score: true
+    method: growth_rate_z
+    trigger: {direction: up, k: 2.5, m: 3, n: 3}   # "nhiều mốc liên tiếp"
+    params:
+      alpha: 1.0          # g_t = (n_t - n_{t-1}) / (n_{t-1} + alpha)
+      smooth_span: 3      # làm mượt g_t trước khi so baseline
+
+  I3:
+    name: Xu hướng tăng phản hồi tiêu cực kéo dài
+    group: volume
+    priority: medium
+    enabled: true
+    in_score: true
+    method: mann_kendall_trend
+    trigger: {direction: up, k: null, m: 1, n: 1}  # kích hoạt theo kiểm định, không theo z
+    params:
+      series: neg_ratio_shrunk        # tỷ lệ tiêu cực đã co về trung bình ngành
+      lookback_days: 28
+      alpha: 0.05
+      min_sen_slope: 0.0              # độ dốc Sen phải dương
+      min_points: 14
+
+  # ---------------- Nhóm rating và trải nghiệm ----------------
+  I4:
+    name: Gia tăng tỷ lệ đánh giá thấp (1-2 sao)
+    group: rating
+    priority: high
+    enabled: true
+    in_score: true
+    method: ratio_shift_z
+    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    params:
+      series: low_star_ratio_shrunk
+      min_abs_increase: 0.05          # tăng tối thiểu 5 điểm phần trăm so với baseline
+
+  I5:
+    name: Biến động rating kéo dài
+    group: rating
+    priority: medium
+    enabled: true
+    in_score: true
+    method: variance_z_or_pelt
+    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    params:
+      series: rating_rolling_variance
+      use_pelt: true                  # hoặc PELT báo điểm đổi phương sai trong accept_recent_days
+      # tham số PELT chi tiết ở default.yaml -> changepoint
+
+  I6:
+    name: Phân cực phân phối rating (1 sao và 5 sao)
+    group: rating
+    priority: medium
+    enabled: true
+    in_score: true
+    method: extreme_share_z
+    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    params:
+      series: extreme_share           # (n1 + n5) / n
+      min_each_pole: 0.15             # mỗi cực >= 15% (ví dụ 40% 1 sao và 45% 5 sao)
+
+  # ---------------- Nhóm nội dung và ngữ nghĩa ----------------
+  I7:
+    name: Dịch chuyển chủ đề sang cụm vấn đề mới
+    group: content
+    priority: high
+    enabled: true
+    in_score: true
+    method: term_burst                # MVP: đột biến tần suất cụm từ; stretch: bertopic
+    trigger: {direction: up, k: 3.0, m: 2, n: 3}
+    params:
+      ngram_range: [1, 2]
+      min_term_count: 5               # cụm từ phải xuất hiện tối thiểu trong cửa sổ
+      min_distinct_users: 3
+      stretch_method: bertopic        # chưa dùng trong MVP
+
+  I8:
+    name: Nội dung an toàn, sức khỏe, pháp lý
+    group: content
+    priority: very_high
+    enabled: true
+    in_score: true
+    method: risk_keyword_count
+    # I8 kích hoạt theo số review và số user phân biệt, không theo z-score
+    trigger: {direction: up, k: null, m: 1, n: 1}
+    params:
+      min_hits: 2                     # kích hoạt I8 (cộng điểm)
+      min_distinct_users: 2
+      severe_min_reviews: 3           # "bằng chứng nghiêm trọng" cho phép lên HIGH nếu thiếu xác nhận 3 nhóm
+      severe_min_distinct_users: 3
+      use_embedding_stage: true       # tầng 2: tương đồng ngữ nghĩa với câu mẫu rủi ro
+      embedding_similarity_min: 0.60  # khởi tạo, P3 hiệu chỉnh trên tập mẫu gán nhãn tay
+      negation_window_tokens: 3
+      lexicons: [configs/lexicon_risk_en.yaml, configs/lexicon_risk_vi.yaml]
+
+  I9:
+    name: Mức tiêu cực theo từng khía cạnh
+    group: content
+    priority: medium
+    enabled: true
+    in_score: true
+    method: aspect_negativity_z
+    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    params:
+      aspects: [quality, delivery, safety, refund]
+      lexicon: configs/lexicon_aspect.yaml
+      min_aspect_reviews: 5
+
+  # ---------------- Chỉ báo phụ: cờ kiểm tra độ tin cậy (không cộng vào RiskScore) ----------------
+  I10:
+    name: Rating và nội dung không khớp
+    group: flag
+    priority: low
+    enabled: true
+    in_score: false
+    method: mismatch_rate_z
+    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    params:
+      text_negative_min: 0.80         # xác suất tiêu cực của văn bản
+      rating_high_min: 4              # nhưng rating >= 4 (và ngược lại: text tích cực, rating <= 2)
+      text_positive_min: 0.80
+      rating_low_max: 2
+
+  I11:
+    name: Tỷ lệ mua hàng xác thực bất thường
+    group: flag
+    priority: low
+    enabled: true
+    in_score: false
+    method: verified_ratio_drop_with_volume_spike
+    trigger: {direction: down, k: 2.5, m: 2, n: 3}
+    params:
+      series: verified_ratio_all      # tính trên dữ liệu CHƯA lọc spam (n_verified_all / n_all)
+      require_volume_spike: true      # chỉ cờ khi đồng thời volume tăng mạnh
+      volume_spike_k: 2.5

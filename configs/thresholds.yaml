@@ -1,0 +1,57 @@
+# Ngưỡng điểm và luật phân mức LOW / MEDIUM / HIGH. Đọc bởi core/config.py -> scoring/.
+# Chỉ báo và trọng số: xem indicators.yaml. Tham số thống kê chung: xem default.yaml.
+# Mọi giá trị là CẤU HÌNH KHỞI TẠO, hiệu chỉnh ở T8 bằng dữ liệu baseline và synthetic injection.
+#
+# Lưu ý về điểm số: với bộ trọng số mặc định (tổng 21 điểm), RiskScore chỉ nhận các giá trị là
+# bội của 1/21, nên phân vị sẽ có nhiều giá trị trùng nhau. Quy ước biên:
+#   LOW    : score < tau1
+#   MEDIUM : tau1 <= score < tau2   (hoặc score >= tau2 nhưng thiếu xác nhận HIGH, xem tiering)
+#   HIGH   : score >= tau2 và đủ xác nhận chéo
+# (Thuyết minh Bảng 8 viết "<= tau2" cho MEDIUM và ">= tau2" cho HIGH; ở đây tau2 thuộc về HIGH.)
+
+version: 1
+
+calibration:
+  method: percentile
+  tau1_percentile: 90               # tau1 = phân vị 90 của RiskScore trong giai đoạn tham chiếu
+  tau2_percentile: 97               # tau2 = phân vị 97
+  per_category: true                # hiệu chỉnh riêng cho từng ngành hàng
+  reference_windows:
+    min_windows: 200                # số SKU-cửa sổ tối thiểu; ít hơn thì dùng fallback
+    exclude_changepoint_windows: true   # bỏ cửa sổ đang có điểm thay đổi khỏi tập tham chiếu
+  floors:                           # chặn dưới để ngưỡng không tụt quá thấp khi dữ liệu nền quá sạch
+    tau1_min: 0.15
+    tau2_min: 0.35
+  fallback:                         # dùng khi chưa hiệu chỉnh hoặc không đủ cửa sổ tham chiếu
+    tau1: 0.20
+    tau2: 0.40
+
+# Ghi đè tay theo ngành, ví dụ sau khi xem phân phối thật:
+# overrides:
+#   Baby_Products: {tau1: 0.20, tau2: 0.45}
+overrides: {}
+
+tiering:
+  groups_counted: [volume, rating, content]   # 3 nhóm tín hiệu; nhóm flag không tính
+  min_active_indicators_per_group: 1          # nhóm "active" khi có ít nhất 1 chỉ báo kích hoạt
+  medium:                                     # cần MỘT trong hai điều kiện
+    min_persist_windows: 2                    # tín hiệu duy trì >= 2 cửa sổ liên tiếp
+    min_groups_active: 2                      # hoặc >= 2/3 nhóm xác nhận
+  high:
+    min_groups_active: 3                      # xác nhận đồng thời cả 3 nhóm
+    allow_severe_override: true               # hoặc bằng chứng I8 nghiêm trọng (indicators.yaml -> I8.params)
+  # Đủ điểm nhưng thiếu xác nhận: hạ xuống mức liền kề thấp hơn rồi kiểm lại điều kiện của mức đó
+  on_missing_confirmation: step_down_and_recheck
+
+state:
+  hysteresis:
+    downgrade_after_windows: 3      # hạ cấp chỉ sau 3 cửa sổ liên tiếp dưới ngưỡng
+  cooldown_days: 7                  # không phát lại cảnh báo cùng mức cho cùng SKU trong 7 ngày
+  escalate_immediately: true        # nâng mức thì phát ngay, bỏ qua cooldown
+
+flags:
+  verify_authenticity_from: [I10, I11]   # cờ "cần xác minh tính xác thực" đi kèm mức đã tính
+  require: any                           # any: một trong hai chỉ báo là đủ gắn cờ
+
+llm_gate:
+  min_level: HIGH                   # chỉ SKU đạt mức này mới chuyển sang module LLM

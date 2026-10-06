@@ -1,0 +1,23 @@
+# môi trường
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+dist/
+.ipynb_checkpoints/
+.env
+
+# dữ liệu: không commit, chỉ giữ thư mục
+data/raw/*
+data/interim/*
+data/processed/*
+!data/*/.gitkeep
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

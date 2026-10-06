@@ -1,0 +1,4 @@
+# Giữ LF cho mọi file text để máy Windows/Linux không lệch diff
+* text=auto eol=lf
+*.parquet binary
+*.png binary

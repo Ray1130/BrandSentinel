@@ -1,0 +1,117 @@
+# Cấu hình mặc định toàn pipeline. Đọc bởi core/config.py (Pydantic).
+# Ngưỡng điểm tau1/tau2, persistence, hysteresis, cooldown: xem thresholds.yaml
+# Chỉ báo, trọng số, k/m/n: xem indicators.yaml
+# Mọi giá trị là cấu hình KHỞI TẠO, tinh chỉnh trong giai đoạn thử nghiệm.
+
+project:
+  name: brandsentinel
+  seed: 42                            # seed duy nhất cho sampling, MinHash, BERTopic
+
+paths:                                # tính từ thư mục gốc repo, dùng dấu "/" (chạy được trên Windows)
+  data_raw: data/raw
+  data_interim: data/interim
+  data_processed: data/processed
+  configs: configs
+  parquet_compression: zstd
+
+time:
+  timezone: UTC
+  bin: day                            # mốc gốc: ngày; cuộn lên tuần khi SKU thưa
+  window_days: 7
+  step_days: 1
+  baseline_days: 90                   # baseline nằm trước cửa sổ hiện tại, không chồng lên
+  exclude_flagged_windows_from_baseline: true   # bỏ cửa sổ từng có điểm thay đổi để baseline không bị nhiễm
+  min_reviews_per_window: 5           # dưới mức này: trạng thái insufficient_data, không chấm điểm
+
+data:
+  source: amazon_reviews_2023
+  key_columns:
+    sku: parent_asin
+    user_id: user_id
+    timestamp: timestamp
+    rating: rating
+    text: text
+    verified_purchase: verified_purchase
+  timestamp_unit: ms                  # Amazon Reviews 2023: timestamp là mili giây epoch
+  categories:                         # CHỐT: chọn lại sau khi kiểm tra dữ liệu
+    dev: [Baby_Products]
+    holdout: [Home_and_Kitchen]
+  sku_selection:                      # chỉ giữ SKU đủ lịch sử để STL/PELT có nghĩa
+    min_history_days: 180
+    min_total_reviews: 200
+    min_median_weekly_reviews: 5
+  start: null                         # null = không giới hạn
+  end: null
+
+preprocessing:
+  dedup:
+    exact_key: [sku, user_id, text_norm]
+    keep: earliest
+    near_duplicate:
+      enabled: false                  # MVP: tắt MinHash
+      jaccard_min: 0.8
+      shingle_tokens: 5
+  spam:                               # chỉ GẮN CỜ is_spam, không xóa dòng
+    min_tokens: 3                     # text quá ngắn
+    max_reviews_per_user_per_day: 5   # một user quá nhiều review trong ngày
+    template_repeat_min_count: 5      # cùng text_norm lặp >= 5 lần trong một SKU-ngày
+    same_second_burst_min: 10         # nhiều review cùng giây trong một SKU
+  normalize:
+    unicode_form: NFC
+    lowercase: true                   # text_norm viết thường; text_raw giữ nguyên
+    strip_html: true
+    collapse_repeated_chars: 3        # "tuyệtttt" -> "tuyệttt"
+    emoji_to_token: true
+    vi_teencode_dict: configs/teencode_vi.yaml   # tùy chọn, bỏ qua nếu file chưa có
+    vi_word_segmentation: false       # bật khi chạy PhoBERT (cần extra nlp)
+
+baseline:
+  estimator: median_mad
+  mad_scale: 1.4826                   # chuyển MAD sang độ lệch chuẩn tương đương
+  min_points: 30
+  pooling:                            # SKU ít dữ liệu: co về baseline ngành hàng
+    enabled: true
+    prior_strength: 20                # số quan sát giả định của prior (empirical Bayes)
+  ratio_shrinkage: beta               # co tỷ lệ (p_neg, tỷ lệ 1-2 sao) khi n nhỏ
+
+stl:
+  period: 7
+  robust: true
+  transform: log1p
+  min_cycles: 2                       # cần ít nhất 2 chu kỳ (14 ngày) mới chạy STL
+  fallback: category_seasonal_profile # không đủ chuỗi: hồ sơ mùa vụ ngành x mức SKU
+  calendar_regressors: false          # stretch: cờ ngày sale/lễ
+
+trend:
+  mann_kendall_alpha: 0.05
+  lookback_days: 28
+  cusum: false                        # MVP: chỉ Mann-Kendall
+
+changepoint:
+  library: ruptures
+  algorithm: pelt
+  cost_model: l2                      # l2 cho tỷ lệ/phương sai; normal cho đếm (mean + var)
+  penalty_beta: 2.5                   # pen = beta * sigma^2 * log(n); tinh chỉnh bằng synthetic injection
+  min_size: 7                         # = độ trễ phát hiện tối thiểu (ngày)
+  jump: 1
+  max_window_days: 180                # chạy lại trên cửa sổ trượt có độ dài giới hạn
+  accept_recent_days: 14              # chỉ chấp nhận điểm thay đổi trong 14 ngày gần nhất
+  min_effect_sigma: 1.0               # độ lệch trung bình tối thiểu (đơn vị sigma baseline)
+
+nlp:                                  # ứng viên mô hình: P3 chốt sau khi thử trên tập mẫu
+  device: auto                        # auto | cpu | cuda
+  batch_size: 64
+  languages: [en]                     # thêm vi khi mở rộng sang tiếng Việt
+  sentiment_model:
+    en: cardiffnlp/twitter-roberta-base-sentiment-latest
+    vi: vinai/phobert-base-v2         # cần fine-tune; chưa dùng trong MVP
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  cache_embeddings: true
+  sample_for_dev: 20000               # giới hạn review khi phát triển để chạy nhanh
+
+llm:
+  config: configs/llm.yaml
+
+logging:
+  level: INFO
+  audit_log: true                     # ghi số bản ghi bị loại ở mỗi bước tiền xử lý
