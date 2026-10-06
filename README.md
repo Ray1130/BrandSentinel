@@ -136,4 +136,12 @@ uv run poe check           # lint + format-check + test
 | Chạy một giai đoạn | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
 | Dữ liệu mock | `from brandsentinel.testing.mock_data import make_all` |
 
+Tải một category Amazon Reviews 2023 và chỉ giữ SKU đủ lịch sử theo `configs/default.yaml`:
+
+```powershell
+uv run --with "datasets>=2.18,<4" python scripts/download_amazon.py --category Baby_Products
+```
+
+Script ghi review JSONL vào `data/raw/`, danh sách SKU kèm thống kê vào `data/interim/` và báo cáo số trường `user_id` / `verified_purchase` thiếu hoặc null. Lượt đầu thống kê SKU, lượt hai xuất review nên không nạp toàn category vào RAM.
+
 Không dùng `make` (không có sẵn trên Windows). Mọi file text đọc/ghi bằng UTF-8.
