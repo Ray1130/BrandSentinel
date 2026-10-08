@@ -9,6 +9,7 @@ __pycache__/
 dist/
 .ipynb_checkpoints/
 .env
+cpython-313.pyc
 
 # dữ liệu: không commit, chỉ giữ thư mục
 data/raw/*
