@@ -1,12 +1,17 @@
 """Test tren chuoi tong hop (thay bang fixture testing/mock_data.py khi co)."""
 import numpy as np
 import polars as pl
-import pytest
 
-from detection.baseline import Baseline, add_robust_z, fit_baseline, robust_z, rolling_robust_z, shrink_to_industry
-from detection.stl import stl_residual, volume_surge_z
-from detection.trend import mk_trend, mk_z_series, neg_ratio_shrunk
-from detection.triggers import TriggerRule, build_indicator_matrix, m_of_n
+from brandsentinel.detection.baseline import (
+    Baseline,
+    add_robust_z,
+    fit_baseline,
+    robust_z,
+    shrink_to_industry,
+)
+from brandsentinel.detection.stl import stl_residual, volume_surge_z
+from brandsentinel.detection.trend import mk_trend, mk_z_series, neg_ratio_shrunk
+from brandsentinel.detection.triggers import TriggerRule, build_indicator_matrix, m_of_n
 
 T, CRISIS = 220, 170  # khung hoang bat dau ngay 170
 
