@@ -1,0 +1,272 @@
+{
+  "VADER (Rule-based)": {
+    "source": "nltk.sentiment.vader",
+    "params": "lexicon-based",
+    "device": "CPU",
+    "batch_size": 1,
+    "metrics": {
+      "accuracy": 0.6285714285714286,
+      "macro_f1": 0.5623857593885012,
+      "macro_precision": 0.5555555555555555,
+      "macro_recall": 0.5786245532695837,
+      "confusion_matrix": [
+        [
+          20,
+          1,
+          8
+        ],
+        [
+          3,
+          3,
+          1
+        ],
+        [
+          7,
+          6,
+          21
+        ]
+      ]
+    },
+    "group_perf": {
+      "clear_negative": {
+        "total": 11,
+        "correct": 5,
+        "accuracy": 0.4545
+      },
+      "clear_neutral": {
+        "total": 5,
+        "correct": 2,
+        "accuracy": 0.4
+      },
+      "clear_positive": {
+        "total": 12,
+        "correct": 9,
+        "accuracy": 0.75
+      },
+      "high_star_bad_text": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "low_star_good_text": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "negation_risk": {
+        "total": 6,
+        "correct": 2,
+        "accuracy": 0.3333
+      },
+      "product_false_positive": {
+        "total": 4,
+        "correct": 2,
+        "accuracy": 0.5
+      },
+      "sarcasm_mismatch": {
+        "total": 3,
+        "correct": 0,
+        "accuracy": 0.0
+      },
+      "short_spam": {
+        "total": 5,
+        "correct": 4,
+        "accuracy": 0.8
+      },
+      "true_risk": {
+        "total": 14,
+        "correct": 10,
+        "accuracy": 0.7143
+      }
+    },
+    "mae": 0.5465,
+    "rmse": 0.7305,
+    "runtime": {
+      "t_load": 0.7745,
+      "t_inf_70": 0.0155,
+      "ms_per_review_70": 0.22,
+      "t_inf_1000": 0.1561,
+      "reviews_per_sec_1000": 6406.9
+    }
+  },
+  "DistilBERT-SST2 (Small Transformer)": {
+    "source": "distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+    "params": "67M parameters",
+    "device": "CPU",
+    "batch_size": 64,
+    "metrics": {
+      "accuracy": 0.8,
+      "macro_f1": 0.5603065134099617,
+      "macro_precision": 0.5360246705915336,
+      "macro_recall": 0.5895875591615957,
+      "confusion_matrix": [
+        [
+          24,
+          0,
+          5
+        ],
+        [
+          3,
+          0,
+          4
+        ],
+        [
+          2,
+          0,
+          32
+        ]
+      ]
+    },
+    "group_perf": {
+      "clear_negative": {
+        "total": 11,
+        "correct": 11,
+        "accuracy": 1.0
+      },
+      "clear_neutral": {
+        "total": 5,
+        "correct": 0,
+        "accuracy": 0.0
+      },
+      "clear_positive": {
+        "total": 12,
+        "correct": 10,
+        "accuracy": 0.8333
+      },
+      "high_star_bad_text": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "low_star_good_text": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "negation_risk": {
+        "total": 6,
+        "correct": 5,
+        "accuracy": 0.8333
+      },
+      "product_false_positive": {
+        "total": 4,
+        "correct": 2,
+        "accuracy": 0.5
+      },
+      "sarcasm_mismatch": {
+        "total": 3,
+        "correct": 1,
+        "accuracy": 0.3333
+      },
+      "short_spam": {
+        "total": 5,
+        "correct": 3,
+        "accuracy": 0.6
+      },
+      "true_risk": {
+        "total": 14,
+        "correct": 14,
+        "accuracy": 1.0
+      }
+    },
+    "mae": 0.3847,
+    "rmse": 0.6529,
+    "runtime": {
+      "t_load": 34.0052,
+      "t_inf_70": 0.5782,
+      "ms_per_review_70": 8.26,
+      "t_inf_1000": 8.5049,
+      "reviews_per_sec_1000": 117.58
+    }
+  },
+  "Twitter-RoBERTa (Default Config)": {
+    "source": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+    "params": "125M parameters",
+    "device": "CPU",
+    "batch_size": 64,
+    "metrics": {
+      "accuracy": 0.8571428571428571,
+      "macro_f1": 0.8050073099415204,
+      "macro_precision": 0.7865079365079365,
+      "macro_recall": 0.8573843330435622,
+      "confusion_matrix": [
+        [
+          25,
+          4,
+          0
+        ],
+        [
+          0,
+          6,
+          1
+        ],
+        [
+          3,
+          2,
+          29
+        ]
+      ]
+    },
+    "group_perf": {
+      "clear_negative": {
+        "total": 11,
+        "correct": 11,
+        "accuracy": 1.0
+      },
+      "clear_neutral": {
+        "total": 5,
+        "correct": 4,
+        "accuracy": 0.8
+      },
+      "clear_positive": {
+        "total": 12,
+        "correct": 12,
+        "accuracy": 1.0
+      },
+      "high_star_bad_text": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "low_star_good_text": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "negation_risk": {
+        "total": 6,
+        "correct": 3,
+        "accuracy": 0.5
+      },
+      "product_false_positive": {
+        "total": 4,
+        "correct": 3,
+        "accuracy": 0.75
+      },
+      "sarcasm_mismatch": {
+        "total": 3,
+        "correct": 0,
+        "accuracy": 0.0
+      },
+      "short_spam": {
+        "total": 5,
+        "correct": 5,
+        "accuracy": 1.0
+      },
+      "true_risk": {
+        "total": 14,
+        "correct": 12,
+        "accuracy": 0.8571
+      }
+    },
+    "mae": 0.2275,
+    "rmse": 0.3931,
+    "runtime": {
+      "t_load": 52.1588,
+      "t_inf_70": 1.2953,
+      "ms_per_review_70": 18.5,
+      "t_inf_1000": 15.9674,
+      "reviews_per_sec_1000": 62.63
+    }
+  }
+}
