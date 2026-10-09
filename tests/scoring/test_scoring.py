@@ -69,6 +69,24 @@ def test_high_requires_cross_group_confirmation_or_severe_override(cfg):
     ]
 
 
+def test_i8_severe_override_requires_severe_strength(cfg):
+    matrix = make_matrix(
+        [
+            {"I4", "I5", "I6", "I8"},
+            {"I4", "I5", "I6", "I8"},
+        ]
+    ).with_columns(
+        pl.when(pl.col("indicator_id") == "I8")
+        .then(pl.when(pl.col("window_end") == date(2025, 1, 1)).then(0.5).otherwise(1.0))
+        .otherwise(pl.col("strength"))
+        .alias("strength")
+    )
+
+    alerts = score_indicators(matrix, cfg)
+
+    assert alerts["level"].to_list() == ["MEDIUM", "HIGH"]
+
+
 def test_verification_flag_obeys_configured_all_requirement(cfg):
     flags = cfg.thresholds.flags.model_copy(update={"require": "all"})
     thresholds = cfg.thresholds.model_copy(update={"flags": flags})
