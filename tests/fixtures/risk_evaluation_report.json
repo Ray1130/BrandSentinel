@@ -1,0 +1,310 @@
+{
+  "metadata": {
+    "timestamp_utc": "2026-10-08T17:17:39.637696+00:00",
+    "input_file": "D:\\Project\\BrandSentinel\\tests\\fixtures\\sample_reviews.csv",
+    "sample_size": 70,
+    "ground_truth_risk_count": 14,
+    "production_threshold": 0.6,
+    "benchmark_threshold": 0.4,
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2"
+  },
+  "methods": {
+    "Layer 1 (Lexicon Only)": {
+      "tp": 14,
+      "fp": 0,
+      "fn": 0,
+      "tn": 56,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion_matrix": {
+        "tn": 56,
+        "fp": 0,
+        "fn": 0,
+        "tp": 14
+      },
+      "fp_count": 0,
+      "fn_count": 0,
+      "fp_samples": [],
+      "fn_samples": []
+    },
+    "Layer 2 Only (Prod th=0.60)": {
+      "tp": 0,
+      "fp": 1,
+      "fn": 14,
+      "tn": 55,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "confusion_matrix": {
+        "tn": 55,
+        "fp": 1,
+        "fn": 14,
+        "tp": 0
+      },
+      "fp_count": 1,
+      "fn_count": 14,
+      "fp_samples": [
+        {
+          "review_id": "REV_061",
+          "text": "authentic oem charger, definitely not a fake replica like other sellers provide.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.6105406880378723,
+          "predicted_risk_terms": null
+        }
+      ],
+      "fn_samples": [
+        {
+          "review_id": "REV_042",
+          "text": "charger started to overheat rapidly and i noticed a strong burning smell in the bedroom.",
+          "test_group": "true_risk",
+          "risk_sim": 0.5865528583526611,
+          "expected_risk_terms": "overheat;burning smell"
+        },
+        {
+          "review_id": "REV_043",
+          "text": "the battery pack caught fire while charging overnight, huge safety hazard!",
+          "test_group": "true_risk",
+          "risk_sim": 0.5196025967597961,
+          "expected_risk_terms": "caught fire"
+        },
+        {
+          "review_id": "REV_044",
+          "text": "lid popped open spraying boiling water, severe burn injury on my arm.",
+          "test_group": "true_risk",
+          "risk_sim": 0.44095057249069214,
+          "expected_risk_terms": "injury"
+        },
+        {
+          "review_id": "REV_045",
+          "text": "baby developed a severe allergic red rash all over her torso after wearing this sleeper.",
+          "test_group": "true_risk",
+          "risk_sim": 0.4520215392112732,
+          "expected_risk_terms": "allergic;rash"
+        },
+        {
+          "review_id": "REV_046",
+          "text": "overwhelming toxic chemical smell made my child cough uncontrollably.",
+          "test_group": "true_risk",
+          "risk_sim": 0.47497138381004333,
+          "expected_risk_terms": "toxic"
+        },
+        {
+          "review_id": "REV_047",
+          "text": "sharp unpolished metal edge sliced my finger, serious injury risk for infants.",
+          "test_group": "true_risk",
+          "risk_sim": 0.3901216983795166,
+          "expected_risk_terms": "injury"
+        },
+        {
+          "review_id": "REV_048",
+          "text": "this baby rocker was subject to a safety recall due to choking hazards, do not use!",
+          "test_group": "true_risk",
+          "risk_sim": 0.36738908290863037,
+          "expected_risk_terms": "recall"
+        },
+        {
+          "review_id": "REV_049",
+          "text": "we are preparing a class action lawsuit after the glass carafe spontaneously exploded.",
+          "test_group": "true_risk",
+          "risk_sim": 0.4424097537994385,
+          "expected_risk_terms": "lawsuit"
+        },
+        {
+          "review_id": "REV_050",
+          "text": "this adapter is a dangerous fake counterfeit with zero grounding, almost zapped me.",
+          "test_group": "true_risk",
+          "risk_sim": 0.3116806447505951,
+          "expected_risk_terms": "fake"
+        },
+        {
+          "review_id": "REV_051",
+          "text": "internal heating coil started smoking and emit burning smell within ten seconds.",
+          "test_group": "true_risk",
+          "risk_sim": 0.5309063196182251,
+          "expected_risk_terms": "burning smell"
+        },
+        {
+          "review_id": "REV_052",
+          "text": "teething ring contains toxic petroleum fumes, caused irritation and rash on my baby.",
+          "test_group": "true_risk",
+          "risk_sim": 0.4320691227912903,
+          "expected_risk_terms": "toxic;rash"
+        },
+        {
+          "review_id": "REV_053",
+          "text": "unit began to overheat and plastic melted right into the wall socket.",
+          "test_group": "true_risk",
+          "risk_sim": 0.5303248167037964,
+          "expected_risk_terms": "overheat"
+        },
+        {
+          "review_id": "REV_054",
+          "text": "blender blade fractured into pieces during operation, lucky to avoid severe injury.",
+          "test_group": "true_risk",
+          "risk_sim": 0.3020097613334656,
+          "expected_risk_terms": "injury"
+        },
+        {
+          "review_id": "REV_055",
+          "text": "discovered this crib was under urgent recall notice by cpsc due to collapse risk.",
+          "test_group": "true_risk",
+          "risk_sim": 0.40251755714416504,
+          "expected_risk_terms": "recall"
+        }
+      ]
+    },
+    "Combined (Prod th=0.60)": {
+      "tp": 14,
+      "fp": 1,
+      "fn": 0,
+      "tn": 55,
+      "precision": 0.9333333333333333,
+      "recall": 1.0,
+      "f1": 0.9655172413793104,
+      "confusion_matrix": {
+        "tn": 55,
+        "fp": 1,
+        "fn": 0,
+        "tp": 14
+      },
+      "fp_count": 1,
+      "fn_count": 0,
+      "fp_samples": [
+        {
+          "review_id": "REV_061",
+          "text": "authentic oem charger, definitely not a fake replica like other sellers provide.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.6105406880378723,
+          "predicted_risk_terms": null
+        }
+      ],
+      "fn_samples": []
+    },
+    "Layer 2 Only (Benchmark th=0.40)": {
+      "tp": 10,
+      "fp": 4,
+      "fn": 4,
+      "tn": 52,
+      "precision": 0.7142857142857143,
+      "recall": 0.7142857142857143,
+      "f1": 0.7142857142857143,
+      "confusion_matrix": {
+        "tn": 52,
+        "fp": 4,
+        "fn": 4,
+        "tp": 10
+      },
+      "fp_count": 4,
+      "fn_count": 4,
+      "fp_samples": [
+        {
+          "review_id": "REV_057",
+          "text": "ran it on high heat with zero burning smell and absolutely no smoke produced.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.5096777677536011,
+          "predicted_risk_terms": null
+        },
+        {
+          "review_id": "REV_058",
+          "text": "ceramic heater has sturdy auto-shutoff so there is no fire hazard at all.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.4501707851886749,
+          "predicted_risk_terms": null
+        },
+        {
+          "review_id": "REV_059",
+          "text": "very gentle hypoallergenic cream, caused no rash or irritation on sensitive newborn skin.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.418671190738678,
+          "predicted_risk_terms": null
+        },
+        {
+          "review_id": "REV_061",
+          "text": "authentic oem charger, definitely not a fake replica like other sellers provide.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.6105406880378723,
+          "predicted_risk_terms": null
+        }
+      ],
+      "fn_samples": [
+        {
+          "review_id": "REV_047",
+          "text": "sharp unpolished metal edge sliced my finger, serious injury risk for infants.",
+          "test_group": "true_risk",
+          "risk_sim": 0.3901216983795166,
+          "expected_risk_terms": "injury"
+        },
+        {
+          "review_id": "REV_048",
+          "text": "this baby rocker was subject to a safety recall due to choking hazards, do not use!",
+          "test_group": "true_risk",
+          "risk_sim": 0.36738908290863037,
+          "expected_risk_terms": "recall"
+        },
+        {
+          "review_id": "REV_050",
+          "text": "this adapter is a dangerous fake counterfeit with zero grounding, almost zapped me.",
+          "test_group": "true_risk",
+          "risk_sim": 0.3116806447505951,
+          "expected_risk_terms": "fake"
+        },
+        {
+          "review_id": "REV_054",
+          "text": "blender blade fractured into pieces during operation, lucky to avoid severe injury.",
+          "test_group": "true_risk",
+          "risk_sim": 0.3020097613334656,
+          "expected_risk_terms": "injury"
+        }
+      ]
+    },
+    "Combined (Benchmark th=0.40)": {
+      "tp": 14,
+      "fp": 4,
+      "fn": 0,
+      "tn": 52,
+      "precision": 0.7777777777777778,
+      "recall": 1.0,
+      "f1": 0.8750000000000001,
+      "confusion_matrix": {
+        "tn": 52,
+        "fp": 4,
+        "fn": 0,
+        "tp": 14
+      },
+      "fp_count": 4,
+      "fn_count": 0,
+      "fp_samples": [
+        {
+          "review_id": "REV_057",
+          "text": "ran it on high heat with zero burning smell and absolutely no smoke produced.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.5096777677536011,
+          "predicted_risk_terms": null
+        },
+        {
+          "review_id": "REV_058",
+          "text": "ceramic heater has sturdy auto-shutoff so there is no fire hazard at all.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.4501707851886749,
+          "predicted_risk_terms": null
+        },
+        {
+          "review_id": "REV_059",
+          "text": "very gentle hypoallergenic cream, caused no rash or irritation on sensitive newborn skin.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.418671190738678,
+          "predicted_risk_terms": null
+        },
+        {
+          "review_id": "REV_061",
+          "text": "authentic oem charger, definitely not a fake replica like other sellers provide.",
+          "test_group": "negation_risk",
+          "risk_sim": 0.6105406880378723,
+          "predicted_risk_terms": null
+        }
+      ],
+      "fn_samples": []
+    }
+  }
+}

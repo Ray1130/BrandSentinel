@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -276,3 +278,85 @@ def compute_aspect(
     """
     active_extractor = extractor or get_aspect_extractor(cfg=cfg)
     return active_extractor.extract_aspects(clean_reviews)
+
+
+def compute_aspect_window_features(
+    reviews_df: pl.DataFrame,
+    dates: list[date],
+    sku: str,
+    category: str,
+    *,
+    window_days: int = 7,
+    window_counts: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Tính các dòng đặc trưng I9 (aspect_neg_*) theo cửa sổ trượt.
+
+    Args:
+        reviews_df: DataFrame chứa các review của SKU (cần cột date, aspect, aspect_sentiment/sentiment_score).
+        dates: Danh sách các mốc ngày liên tục.
+        sku: Mã SKU.
+        category: Ngành hàng.
+        window_days: Kích thước cửa sổ trượt (ngày).
+        window_counts: Danh sách tổng review trong từng cửa sổ (n_window).
+
+    Returns:
+        Danh sách dict chứa các dòng đặc trưng I9 cho feature_series.
+    """
+    if len(dates) < window_days:
+        return []
+
+    # Gom số review và số review tiêu cực cho từng khía cạnh theo ngày
+    by_day_aspect_n: dict[tuple[date, str], int] = defaultdict(int)
+    by_day_aspect_neg: dict[tuple[date, str], int] = defaultdict(int)
+
+    if not reviews_df.is_empty() and "aspect" in reviews_df.columns:
+        cols = ["date", "aspect"]
+        has_asp_sent = "aspect_sentiment" in reviews_df.columns
+        has_sent = "sentiment_score" in reviews_df.columns
+        if has_asp_sent:
+            cols.append("aspect_sentiment")
+        if has_sent:
+            cols.append("sentiment_score")
+
+        for row in reviews_df.select(cols).iter_rows(named=True):
+            d = row["date"]
+            asp = row["aspect"]
+            if asp and asp in ASPECTS:
+                by_day_aspect_n[(d, asp)] += 1
+                sent = row.get("aspect_sentiment")
+                if sent is None:
+                    sent = row.get("sentiment_score")
+                if sent is not None and sent < 0:
+                    by_day_aspect_neg[(d, asp)] += 1
+
+    rows: list[dict[str, Any]] = []
+
+    for index in range(window_days - 1, len(dates)):
+        w_end = dates[index]
+        curr_dates = dates[index - window_days + 1 : index + 1]
+
+        n_window = (
+            window_counts[index]
+            if window_counts is not None and index < len(window_counts)
+            else 0
+        )
+
+        for asp in ASPECTS:
+            total_asp = sum(by_day_aspect_n[(d, asp)] for d in curr_dates)
+            neg_asp = sum(by_day_aspect_neg[(d, asp)] for d in curr_dates)
+            ratio = float(neg_asp / total_asp) if total_asp > 0 else None
+
+            rows.append(
+                {
+                    "sku": sku,
+                    "category": category,
+                    "window_end": w_end,
+                    "indicator_id": "I9",
+                    "feature": f"aspect_neg_{asp}",
+                    "raw_value": ratio,
+                    "n_window": int(n_window),
+                }
+            )
+
+    return rows
+

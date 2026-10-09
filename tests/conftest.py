@@ -1,12 +1,15 @@
+import sys
 from pathlib import Path
 
 import pytest
 
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
 from brandsentinel.core.config import load_config
 from brandsentinel.core.types import Table
 from brandsentinel.testing.mock_data import make_all
-
-REPO = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="session")
