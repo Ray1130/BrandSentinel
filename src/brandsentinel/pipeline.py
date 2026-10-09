@@ -162,6 +162,39 @@ def run_features(
     return fs
 
 
+def run_score(
+    category: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    config: Config | None = None,
+) -> pl.DataFrame:
+    """Read the full indicator history, score it, and persist the requested alert range."""
+    cfg = config or load_config()
+    if start and end and start > end:
+        raise ValueError("start phải trước hoặc bằng end")
+    try:
+        matrix = read_table(Table.INDICATOR_MATRIX, cfg, category=category)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Chua co indicator_matrix cua '{category}': "
+            f"chay `bs run --stage detect --category {category}` truoc"
+        ) from e
+
+    from brandsentinel.scoring.score import score_indicators  # noqa: PLC0415
+
+    alerts = score_indicators(matrix, cfg)
+    if start is not None:
+        alerts = alerts.filter(pl.col("window_end") >= start)
+    if end is not None:
+        alerts = alerts.filter(pl.col("window_end") <= end)
+    if alerts.is_empty():
+        log.warning("score: khong co alert nao trong [%s, %s] cho '%s'", start, end, category)
+        return alerts
+    write_table(alerts, Table.ALERTS, cfg)
+    return alerts
+
+
 def _refuse_to_drop_content_features(fs: pl.DataFrame, cfg: Config, category: str) -> None:
     """write_table thay the theo SKU/khoang ngay, khong theo indicator_id."""
     old = _read_or_none(Table.FEATURE_SERIES, cfg, category)
@@ -205,5 +238,17 @@ def run_stage(
             "feature_series": fs.height,
             "skus": fs["sku"].n_unique() if fs.height else 0,
             "rows_by_indicator": dict(zip(by["indicator_id"], by["len"], strict=True)),
+        }
+    if stage == "score":
+        alerts = run_score(category, start=start, end=end, config=cfg)
+        by_level = alerts.group_by("level").len().sort("level") if alerts.height else None
+        return {
+            "alerts": alerts.height,
+            "skus": alerts["sku"].n_unique() if alerts.height else 0,
+            "rows_by_level": (
+                dict(zip(by_level["level"], by_level["len"], strict=True))
+                if by_level is not None
+                else {}
+            ),
         }
     raise NotImplementedError(stage)

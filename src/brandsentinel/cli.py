@@ -22,7 +22,7 @@ class Stage(StrEnum):
     evaluate = "evaluate"
 
 
-IMPLEMENTED = {"preprocess", "features"}
+IMPLEMENTED = {"preprocess", "features", "score"}
 
 NLP_MODULES = {
     "torch",
