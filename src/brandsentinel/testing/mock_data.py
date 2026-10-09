@@ -72,8 +72,10 @@ def make_clean_reviews(
     seed: int = 42,
     category: str = "Mock_Category",
     crisis_sku_index: int | None = 0,
+    rating_only_sku_index: int | None = None,
     bombing_sku_index: int | None = 1,
     crisis_days: int = 14,
+    rating_only_days: int = 14,
     bombing_days: int = 10,
 ) -> pl.DataFrame:
     rng = np.random.default_rng(seed)
@@ -116,13 +118,17 @@ def make_clean_reviews(
             day = start + timedelta(days=d)
             lam = base * WEEK_FACTOR[day.weekday()]
             crisis = s == crisis_sku_index and d >= days - crisis_days
+            rating_only = s == rating_only_sku_index and d >= days - rating_only_days
             bomb = s == bombing_sku_index and d >= days - bombing_days
             if crisis:
                 lam *= 2.0
             midnight = datetime(day.year, day.month, day.day, tzinfo=UTC)
             for _ in range(int(rng.poisson(lam))):
                 rating = int(
-                    rng.choice([1, 2, 3, 4, 5], p=RATING_P_CRISIS if crisis else RATING_P_NORMAL)
+                    rng.choice(
+                        [1, 2, 3, 4, 5],
+                        p=RATING_P_CRISIS if crisis or rating_only else RATING_P_NORMAL,
+                    )
                 )
                 ts = midnight + timedelta(
                     seconds=int(rng.integers(0, 86400)), milliseconds=int(rng.integers(0, 1000))
@@ -290,9 +296,14 @@ def make_feature_series(
             return float(num[i] / den[i]) if den[i] > 0 else None
 
         for i in range(w - 1, len(dates)):
+            prior_window_count = w_n[i - w] if i >= 2 * w - 1 else None
             vals: dict[str, float | None] = {
                 "log1p_daily_count": math.log1p(a["n"][i]),
-                "growth_rate": float((a["n"][i] - a["n"][i - 1]) / (a["n"][i - 1] + 1.0)),
+                "growth_rate": (
+                    float((w_n[i] - prior_window_count) / (prior_window_count + 1.0))
+                    if prior_window_count is not None
+                    else None
+                ),
                 "neg_ratio_shrunk": float((w_neg[i] + 0.5 * w_n3[i] + 2) / (w_n[i] + 20)),
                 "low_star_ratio_shrunk": float((w_neg[i] + 2) / (w_n[i] + 20)),
                 "rating_rolling_variance": (
@@ -443,9 +454,18 @@ def make_all(
     days: int = 120,
     category: str = "Mock_Category",
     cfg: Config | None = None,
+    rating_only_sku_index: int | None = None,
+    bombing_sku_index: int | None = 1,
 ) -> dict[Table, pl.DataFrame]:
     cfg = cfg or get_config()
-    clean = make_clean_reviews(n_skus=n_skus, days=days, seed=seed, category=category)
+    clean = make_clean_reviews(
+        n_skus=n_skus,
+        days=days,
+        seed=seed,
+        category=category,
+        rating_only_sku_index=rating_only_sku_index,
+        bombing_sku_index=bombing_sku_index,
+    )
     daily = make_daily_agg(clean)
     nlp = make_nlp_features(clean, seed=seed)
     feats = make_feature_series(clean, daily, nlp, window_days=cfg.default.time.window_days)

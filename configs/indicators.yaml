@@ -43,7 +43,7 @@ indicators:
     method: growth_rate_z
     trigger: {direction: up, k: 2.5, m: 3, n: 3}   # "nhiều mốc liên tiếp"
     params:
-      alpha: 1.0          # g_t = (n_t - n_{t-1}) / (n_{t-1} + alpha)
+      alpha: 1.0          # g_t = (N_7d,t - N_7d,t-7) / (N_7d,t-7 + alpha)
       smooth_span: 3      # làm mượt g_t trước khi so baseline
 
   I3:
@@ -69,10 +69,10 @@ indicators:
     enabled: true
     in_score: true
     method: ratio_shift_z
-    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    trigger: {direction: up, k: 3.0, m: 3, n: 5}
     params:
       series: low_star_ratio_shrunk
-      min_abs_increase: 0.05          # tăng tối thiểu 5 điểm phần trăm so với baseline
+      min_increase: 0.05              # tăng tối thiểu 5 điểm phần trăm so với baseline
 
   I5:
     name: Biến động rating kéo dài
@@ -81,7 +81,7 @@ indicators:
     enabled: true
     in_score: true
     method: variance_z_or_pelt
-    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    trigger: {direction: up, k: 2.5, m: 3, n: 5}
     params:
       series: rating_rolling_variance
       use_pelt: true                  # hoặc PELT báo điểm đổi phương sai trong accept_recent_days
@@ -94,10 +94,11 @@ indicators:
     enabled: true
     in_score: true
     method: extreme_share_z
-    trigger: {direction: up, k: 2.5, m: 2, n: 3}
+    trigger: {direction: up, k: 0.5, m: 3, n: 5}
     params:
       series: extreme_share           # (n1 + n5) / n
-      min_each_pole: 0.15             # mỗi cực >= 15% (ví dụ 40% 1 sao và 45% 5 sao)
+      p_min: 0.15                     # mỗi cực >= 15% (ví dụ 40% 1 sao và 45% 5 sao)
+      min_n: 20
 
   # ---------------- Nhóm nội dung và ngữ nghĩa ----------------
   I7:

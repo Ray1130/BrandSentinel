@@ -49,7 +49,7 @@ ASPECTS: tuple[str, ...] = ("quality", "delivery", "safety", "refund")
 
 # Tên đặc trưng (cột `feature` của feature_series) mà mỗi chỉ báo đọc. Khớp `series:` trong
 # configs/indicators.yaml. Thêm đặc trưng mới = sửa ở đây + docs/data_contract.md (qua PR).
-# Đặc trưng cấp ngày (log1p_daily_count, growth_rate) dùng window_end = chính ngày đó.
+# I1 là đếm theo ngày; I2 là tăng trưởng giữa hai cửa sổ ngày kết thúc tại window_end.
 FEATURES_BY_INDICATOR: dict[str, tuple[str, ...]] = {
     "I1": ("log1p_daily_count",),
     "I2": ("growth_rate",),
