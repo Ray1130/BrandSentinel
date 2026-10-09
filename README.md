@@ -134,6 +134,7 @@ uv run poe check           # lint + format-check + test
 |---|---|
 | Test / lint / format | `uv run poe test` / `uv run poe lint` / `uv run poe fmt` |
 | Chạy một giai đoạn | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
+| Chấm điểm từ `indicator_matrix` và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy detect trước) |
 | Dữ liệu mock | `from brandsentinel.testing.mock_data import make_all` |
 
 Tải một category Amazon Reviews 2023 và chỉ giữ SKU đủ lịch sử theo `configs/default.yaml`:
