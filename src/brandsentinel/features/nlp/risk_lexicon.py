@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -243,3 +245,80 @@ def compute_risk_lexicon(
     """
     active_detector = detector or get_risk_detector(cfg=cfg)
     return active_detector.compute_risk(clean_reviews)
+
+
+def compute_risk_window_features(
+    reviews_df: pl.DataFrame,
+    dates: list[date],
+    sku: str,
+    category: str,
+    *,
+    window_days: int = 7,
+    window_counts: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Tính các dòng đặc trưng I8 (risk_hits và risk_distinct_users) theo cửa sổ trượt.
+
+    Args:
+        reviews_df: DataFrame chứa các review của SKU (cần cột date, user_id, risk_hit).
+        dates: Danh sách các mốc ngày liên tục.
+        sku: Mã SKU.
+        category: Ngành hàng.
+        window_days: Kích thước cửa sổ trượt (ngày).
+        window_counts: Danh sách tổng review trong từng cửa sổ (n_window).
+
+    Returns:
+        Danh sách dict chứa các dòng đặc trưng I8 cho feature_series.
+    """
+    if len(dates) < window_days:
+        return []
+
+    # Gom số hit và tập user theo từng ngày
+    by_day_hits: dict[date, int] = defaultdict(int)
+    by_day_risk_users: dict[date, set[str]] = defaultdict(set)
+
+    if not reviews_df.is_empty() and "risk_hit" in reviews_df.columns:
+        for d, u, hit in reviews_df.select("date", "user_id", "risk_hit").iter_rows():
+            if hit:
+                by_day_hits[d] += 1
+                by_day_risk_users[d].add(u)
+
+    rows: list[dict[str, Any]] = []
+
+    for index in range(window_days - 1, len(dates)):
+        w_end = dates[index]
+        curr_dates = dates[index - window_days + 1 : index + 1]
+
+        hits_sum = sum(by_day_hits[d] for d in curr_dates)
+        distinct_users = len(set().union(*(by_day_risk_users[d] for d in curr_dates)))
+
+        n_window = (
+            window_counts[index]
+            if window_counts is not None and index < len(window_counts)
+            else 0
+        )
+
+        rows.append(
+            {
+                "sku": sku,
+                "category": category,
+                "window_end": w_end,
+                "indicator_id": "I8",
+                "feature": "risk_hits",
+                "raw_value": float(hits_sum),
+                "n_window": int(n_window),
+            }
+        )
+        rows.append(
+            {
+                "sku": sku,
+                "category": category,
+                "window_end": w_end,
+                "indicator_id": "I8",
+                "feature": "risk_distinct_users",
+                "raw_value": float(distinct_users),
+                "n_window": int(n_window),
+            }
+        )
+
+    return rows
+
