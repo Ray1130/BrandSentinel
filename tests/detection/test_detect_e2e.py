@@ -44,14 +44,7 @@ def test_detect_end_to_end_on_mock(cfg):
         matrix = detect(feature_series, cfg)
         validate(Table.INDICATOR_MATRIX, matrix)
 
-        assert set(matrix["indicator_id"].unique()) == {
-            "I1",
-            "I2",
-            "I3",
-            "I4",
-            "I5",
-            "I6",
-        }
+        assert set(matrix["indicator_id"].unique()) == {f"I{i}" for i in range(1, 12)}
         assert matrix.group_by(["sku", "window_end", "indicator_id"]).len()["len"].max() == 1
         assert matrix["strength"].min() >= 0
         assert matrix["strength"].max() <= 1

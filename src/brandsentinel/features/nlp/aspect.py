@@ -24,7 +24,8 @@ from brandsentinel.features.nlp.sentiment import SentimentAnalyzer, get_sentimen
 log = logging.getLogger(__name__)
 
 # Thứ tự ưu tiên an toàn nghiệp vụ khi hòa (tie-break):
-# safety (an toàn tính mạng) > refund (khiếu nại tài chính) > delivery (vận chuyển) > quality (chất lượng chung)
+# safety (an toàn tính mạng) > refund (khiếu nại tài chính) > delivery (vận chuyển)
+# > quality (chất lượng chung)
 ASPECT_SEVERITY_ORDER: dict[str, int] = {
     "safety": 4,
     "refund": 3,
@@ -54,7 +55,11 @@ class AspectExtractor:
         else:
             repo_root = Path(self.cfg.path("configs")).resolve().parent
             i9_spec = self.cfg.indicators.indicators.get("I9")
-            lex_rel = i9_spec.params.get("lexicon", "configs/lexicon_aspect.yaml") if i9_spec else "configs/lexicon_aspect.yaml"
+            lex_rel = (
+                i9_spec.params.get("lexicon", "configs/lexicon_aspect.yaml")
+                if i9_spec
+                else "configs/lexicon_aspect.yaml"
+            )
             self.lexicon_path = repo_root / lex_rel
 
         self._load_lexicon()
@@ -120,7 +125,9 @@ class AspectExtractor:
                 for match in pat.finditer(sent_lower):
                     m_start, m_end = match.start(), match.end()
                     # Bỏ qua nếu nằm trong excluded span
-                    if any(e_start <= m_start and m_end <= e_end for e_start, e_end in excluded_spans):
+                    if any(
+                        e_start <= m_start and m_end <= e_end for e_start, e_end in excluded_spans
+                    ):
                         continue
                     match_count += 1
             if match_count > 0:
@@ -138,7 +145,8 @@ class AspectExtractor:
         Returns:
             Tuple (dominant_aspect, aspect_text):
             - dominant_aspect: Tên khía cạnh ('quality', 'delivery', 'safety', 'refund') hoặc None.
-            - aspect_text: Đoạn văn bản gồm các câu liên quan đến dominant aspect (để tính sentiment).
+            - aspect_text: Đoạn văn bản gồm các câu liên quan đến dominant aspect
+              (để tính sentiment).
         """
         if text is None or not isinstance(text, str) or not text.strip():
             return None, None
@@ -292,16 +300,17 @@ def compute_aspect_window_features(
     """Tính các dòng đặc trưng I9 (aspect_neg_*) theo cửa sổ trượt.
 
     Args:
-        reviews_df: DataFrame chứa các review của SKU (cần cột date, aspect, aspect_sentiment/sentiment_score).
+        reviews_df: DataFrame review của SKU, cần cột date/aspect và sentiment theo aspect.
         dates: Danh sách các mốc ngày liên tục.
         sku: Mã SKU.
         category: Ngành hàng.
         window_days: Kích thước cửa sổ trượt (ngày).
-        window_counts: Danh sách tổng review trong từng cửa sổ (n_window).
+        window_counts: Tham số cũ, giữ để tương thích; n_window được tính theo từng aspect.
 
     Returns:
         Danh sách dict chứa các dòng đặc trưng I9 cho feature_series.
     """
+    del window_counts
     if len(dates) < window_days:
         return []
 
@@ -335,12 +344,6 @@ def compute_aspect_window_features(
         w_end = dates[index]
         curr_dates = dates[index - window_days + 1 : index + 1]
 
-        n_window = (
-            window_counts[index]
-            if window_counts is not None and index < len(window_counts)
-            else 0
-        )
-
         for asp in ASPECTS:
             total_asp = sum(by_day_aspect_n[(d, asp)] for d in curr_dates)
             neg_asp = sum(by_day_aspect_neg[(d, asp)] for d in curr_dates)
@@ -354,9 +357,8 @@ def compute_aspect_window_features(
                     "indicator_id": "I9",
                     "feature": f"aspect_neg_{asp}",
                     "raw_value": ratio,
-                    "n_window": int(n_window),
+                    "n_window": int(total_asp),
                 }
             )
 
     return rows
-

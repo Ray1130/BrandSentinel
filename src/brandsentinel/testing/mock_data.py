@@ -255,7 +255,7 @@ def make_feature_series(
         acc["nlp_n"] += 1
         acc["hits"] += hit
         acc["mism"] += bool(mism)
-        if hit:
+        if hit and user is not None:
             users[(sku, day)].add(user)
         if aspect:
             acc[f"asp_n_{aspect}"] += 1
@@ -328,7 +328,11 @@ def make_feature_series(
                 rows["indicator_id"].append(feat_to_ind[feat])
                 rows["feature"].append(feat)
                 rows["raw_value"].append(val)
-                rows["n_window"].append(int(w_n[i]))
+                if feat.startswith("aspect_neg_"):
+                    aspect = feat.removeprefix("aspect_neg_")
+                    rows["n_window"].append(int(asp[aspect][1][i]))
+                else:
+                    rows["n_window"].append(int(w_n[i]))
     return conform(
         Table.FEATURE_SERIES, pl.DataFrame(rows, schema_overrides={"raw_value": pl.Float64})
     )

@@ -16,13 +16,18 @@ def classify_level(
     groups_active: Iterable[str],
     triggered_ids: Iterable[str],
     config: Config,
+    *,
+    severe_evidence: bool = False,
 ) -> Level:
     """Apply configured MEDIUM/HIGH confirmation rules to a single scored window."""
     tiering = config.thresholds.tiering
     groups = set(groups_active)
     ids = set(triggered_ids)
     severe_override = (
-        tiering.high.allow_severe_override and "I8" in ids and "I8" in config.indicators.scored_ids
+        tiering.high.allow_severe_override
+        and severe_evidence
+        and "I8" in ids
+        and "I8" in config.indicators.scored_ids
     )
     high = score >= thresholds.tau2 and (
         len(groups) >= tiering.high.min_groups_active or severe_override

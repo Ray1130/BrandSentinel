@@ -89,7 +89,8 @@ class RiskLexiconDetector:
                     self.risk_patterns.append((compiled, canonical, cat_name))
 
         log.info(
-            "Đã nạp RiskLexiconDetector từ %s: %d risk patterns, %d exclude contexts, negation_window=%d",
+            "Đã nạp RiskLexiconDetector từ %s: %d risk patterns, %d exclude contexts, "
+            "negation_window=%d",
             self.lexicon_path.name,
             len(self.risk_patterns),
             len(self.exclude_patterns),
@@ -120,8 +121,6 @@ class RiskLexiconDetector:
         token_matches = list(re.finditer(r"\b[\w']+\b|[.,!?;]", text_lower))
         tokens = [m.group() for m in token_matches]
         token_starts = [m.start() for m in token_matches]
-        token_ends = [m.end() for m in token_matches]
-
         valid_canonical_terms: list[str] = []
         term_positions: list[int] = []
 
@@ -165,8 +164,7 @@ class RiskLexiconDetector:
         if valid_canonical_terms:
             # Sắp xếp theo thứ tự xuất hiện đầu tiên trong văn bản
             sorted_terms = [
-                term
-                for _, term in sorted(zip(term_positions, valid_canonical_terms, strict=True))
+                term for _, term in sorted(zip(term_positions, valid_canonical_terms, strict=True))
             ]
             return True, sorted_terms
 
@@ -280,7 +278,8 @@ def compute_risk_window_features(
         for d, u, hit in reviews_df.select("date", "user_id", "risk_hit").iter_rows():
             if hit:
                 by_day_hits[d] += 1
-                by_day_risk_users[d].add(u)
+                if u is not None:
+                    by_day_risk_users[d].add(u)
 
     rows: list[dict[str, Any]] = []
 
@@ -292,9 +291,7 @@ def compute_risk_window_features(
         distinct_users = len(set().union(*(by_day_risk_users[d] for d in curr_dates)))
 
         n_window = (
-            window_counts[index]
-            if window_counts is not None and index < len(window_counts)
-            else 0
+            window_counts[index] if window_counts is not None and index < len(window_counts) else 0
         )
 
         rows.append(
@@ -321,4 +318,3 @@ def compute_risk_window_features(
         )
 
     return rows
-

@@ -28,6 +28,7 @@ class _ScoredWindow(TypedDict):
     groups_active: list[str]
     triggered_ids: list[str]
     verify_flag: bool
+    severe_evidence: bool
     thresholds: ScoreThresholds
 
 
@@ -72,6 +73,13 @@ def score_indicators(
             key=lambda indicator_id: int(indicator_id[1:]),
         )
         triggered_set = set(triggered_ids)
+        i8_rows = rows.filter(pl.col("indicator_id") == "I8")
+        severe_evidence = (
+            i8_rows.height > 0
+            and bool(i8_rows["triggered"][0])
+            and i8_rows["strength"][0] is not None
+            and i8_rows["strength"][0] >= 1.0
+        )
         active_scored_ids = set(triggered_ids) & scored_ids
         score = sum(weights[indicator_id] for indicator_id in active_scored_ids)
         active = active_groups(active_scored_ids, config)
@@ -88,6 +96,7 @@ def score_indicators(
                 "groups_active": active,
                 "triggered_ids": triggered_ids,
                 "verify_flag": verify_flag,
+                "severe_evidence": severe_evidence,
                 "thresholds": thresholds_by_category[category],
             }
         )
@@ -110,6 +119,7 @@ def score_indicators(
                     window["groups_active"],
                     window["triggered_ids"],
                     config,
+                    severe_evidence=window["severe_evidence"],
                 )
             )
 

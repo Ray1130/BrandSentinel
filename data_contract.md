@@ -93,7 +93,7 @@ Một dòng cho mỗi `(sku, date)`, **điền 0 cho ngày thiếu**.
 | `indicator_id` | Utf8 | không | `"I1"`…`"I11"` |
 | `feature` | Utf8 | không | Tên chuỗi đặc trưng trong chỉ báo (bảng bên dưới); khóa duy nhất là (`sku`, `window_end`, `indicator_id`, `feature`) |
 | `raw_value` | Float64 | có | Giá trị đặc trưng thô; null khi không xác định |
-| `n_window` | Int32 | không | Số review trong cửa sổ (cổng dữ liệu tối thiểu) |
+| `n_window` | Int32 | không | Số review hỗ trợ giá trị đặc trưng trong cửa sổ (cổng dữ liệu tối thiểu); I9 là số review được gán aspect tương ứng |
 
 Cặp (`indicator_id`, `feature`) hợp lệ — khai báo trong `core/types.py::FEATURES_BY_INDICATOR`,
 thêm đặc trưng mới phải sửa ở đó và ở bảng này (qua PR). `log1p_daily_count` là đặc trưng theo ngày.
