@@ -96,8 +96,10 @@ Một dòng cho mỗi `(sku, date)`, **điền 0 cho ngày thiếu**.
 | `n_window` | Int32 | không | Số review trong cửa sổ (cổng dữ liệu tối thiểu) |
 
 Cặp (`indicator_id`, `feature`) hợp lệ — khai báo trong `core/types.py::FEATURES_BY_INDICATOR`,
-thêm đặc trưng mới phải sửa ở đó và ở bảng này (qua PR). Đặc trưng cấp ngày
-(`log1p_daily_count`, `growth_rate`) dùng `window_end` = chính ngày đó.
+thêm đặc trưng mới phải sửa ở đó và ở bảng này (qua PR). `log1p_daily_count` là đặc trưng theo ngày.
+`growth_rate` so sánh tổng review của cửa sổ W ngày kết thúc tại `window_end` với tổng của cửa sổ
+W ngày liền trước (không chồng lấn); raw value là `(current - previous) / (previous + alpha)`.
+Các giá trị đầu chuỗi được lưu `null` cho đến khi cả hai cửa sổ đều đầy đủ.
 
 | Chỉ báo | `feature` |
 |---|---|

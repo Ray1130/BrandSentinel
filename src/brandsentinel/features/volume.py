@@ -35,20 +35,27 @@ def make_volume_features(daily_agg: pl.DataFrame, *, window_days: int = 7) -> pl
 		window_neutral = rolling_sum(neutral, window_days)
 
 		for index in range(window_days - 1, len(dates)):
-			prior_count = counts[index - 1] if index else None
+			prior_window_count = (
+				window_count[index - window_days]
+				if index >= 2 * window_days - 1
+				else None
+			)
 			values: tuple[tuple[str, str, float | None], ...] = (
 				("I1", "log1p_daily_count", math.log1p(counts[index])),
 				(
 					"I2",
 					"growth_rate",
-					(counts[index] - prior_count) / (prior_count + 1.0)
-					if prior_count is not None
+					(window_count[index] - prior_window_count) / (prior_window_count + 1.0)
+					if prior_window_count is not None
 					else None,
 				),
 				(
 					"I3",
 					"neg_ratio_shrunk",
-					float((window_negative[index] + 0.5 * window_neutral[index] + 2) / (window_count[index] + 20)),
+					float(
+						(window_negative[index] + 0.5 * window_neutral[index] + 2)
+						/ (window_count[index] + 20)
+					),
 				),
 			)
 			for indicator_id, feature, raw_value in values:
