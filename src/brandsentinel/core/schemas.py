@@ -148,6 +148,7 @@ COLUMNS: dict[Table, dict[str, Col]] = {
         "source_url": Col(pl.String),
         "product_name": Col(pl.String),
         "match_type": Col(pl.String, checks=(pa.Check.isin(["exact_asin"]),)),
+        "match_confidence": Col(pl.Float64, checks=(_ZERO_ONE,)),
     },
 }
 
