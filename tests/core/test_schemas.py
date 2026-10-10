@@ -123,12 +123,15 @@ def test_recall_labels_require_exact_asin_match():
             "source_url": ["https://www.cpsc.gov/Recalls"],
             "product_name": ["Example baby product"],
             "match_type": ["exact_asin"],
+            "match_confidence": [1.0],
         }
     )
 
     validate(Table.RECALL_LABELS, recall)
     with pytest.raises(DataContractError, match="match_type"):
         validate(Table.RECALL_LABELS, recall.with_columns(pl.lit("fuzzy_name").alias("match_type")))
+    with pytest.raises(DataContractError, match="match_confidence"):
+        validate(Table.RECALL_LABELS, recall.with_columns(pl.lit(1.1).alias("match_confidence")))
 
 
 def test_conform_casts_and_rejects_extra(mock_tables):

@@ -30,10 +30,13 @@ SKU phải là ASIN trong Amazon Reviews 2023 `parent_asin`, và chỉ nhận k�
 | `source_url` | string | Không | URL HTTPS dẫn tới hồ sơ nguồn |
 | `product_name` | string | Không | Tên sản phẩm trong hồ sơ thu hồi |
 | `match_type` | string | Không | Phải là `exact_asin` |
+| `match_confidence` | float | Không | Độ tin cậy định danh; exact ASIN = `1.0`, nằm trong `[0, 1]` |
 
 Khóa `(sku, recall_id)` cho phép một ASIN có nhiều lần thu hồi nhưng ngăn trùng cùng một sự kiện.
-`source_url` phải dùng HTTPS. Trước khi đưa nhãn vào phép đo precision/recall, cần xác minh thủ công
-liên kết giữa ASIN và hồ sơ CPSC, lưu nguồn dẫn chứng và không coi nhãn thiếu là nhãn âm.
+`source_url` phải dùng HTTPS. Đầu vào ghép phải có ASIN đã được kiểm tay (`manually_verified=true`)
+và URL hồ sơ làm bằng chứng; chỉ bản ghi đã kiểm tay, khớp chính xác với `clean_reviews.sku` mới
+được xuất thành nhãn. `match_confidence` mô tả độ khớp định danh, không thay thế việc kiểm tay.
+Không coi nhãn thiếu là nhãn âm.
 
 ## `alerts`
 
