@@ -1,4 +1,4 @@
-"""Schema 6 bảng của hợp đồng dữ liệu (docs/data_contract.md) và hàm kiểm tra.
+"""Schema các bảng của hợp đồng dữ liệu (docs/data_contract.md) và hàm kiểm tra.
 
     from brandsentinel.core.schemas import validate, conform, empty_table
     df = validate(Table.CLEAN_REVIEWS, df)      # ném DataContractError nếu vi phạm
@@ -62,6 +62,7 @@ KEYS: dict[Table, list[str]] = {
     Table.FEATURE_SERIES: ["sku", "window_end", "indicator_id", "feature"],
     Table.INDICATOR_MATRIX: ["sku", "window_end", "indicator_id"],
     Table.ALERTS: ["sku", "window_end"],
+    Table.RECALL_LABELS: ["sku", "recall_id"],
 }
 DATE_COLUMN: dict[Table, str] = {
     Table.CLEAN_REVIEWS: "date",
@@ -70,6 +71,7 @@ DATE_COLUMN: dict[Table, str] = {
     Table.FEATURE_SERIES: "window_end",
     Table.INDICATOR_MATRIX: "window_end",
     Table.ALERTS: "window_end",
+    Table.RECALL_LABELS: "recall_date",
 }
 
 COLUMNS: dict[Table, dict[str, Col]] = {
@@ -136,6 +138,16 @@ COLUMNS: dict[Table, dict[str, Col]] = {
         "persist": Col(pl.Int8, checks=(_NONNEG,)),
         "verify_flag": Col(pl.Boolean),
         "triggered_ids": Col(pl.List(pl.String)),
+    },
+    Table.RECALL_LABELS: {
+        "sku": Col(pl.String),
+        "category": Col(pl.String),
+        "recall_id": Col(pl.String),
+        "recall_date": Col(pl.Date),
+        "source": Col(pl.String),
+        "source_url": Col(pl.String),
+        "product_name": Col(pl.String),
+        "match_type": Col(pl.String, checks=(pa.Check.isin(["exact_asin"]),)),
     },
 }
 
@@ -228,9 +240,22 @@ def _check_indicator_matrix(df: pl.DataFrame) -> list[str]:
 def _check_alerts(df: pl.DataFrame) -> list[str]:
     groups = [g.value for g in SCORED_GROUPS]
     rules = {
+        "alerts chỉ được chứa mức MEDIUM hoặc HIGH": pl.col("level").is_in(
+            [Level.MEDIUM.value, Level.HIGH.value]
+        ),
         "groups_active chứa nhóm ngoài volume/rating/content": _subset_of("groups_active", groups),
         "triggered_ids chứa mã chỉ báo ngoài I1-I11": _subset_of(
             "triggered_ids", list(INDICATOR_IDS)
+        ),
+    }
+    return [f"{b} dòng vi phạm: {name}" for name, ok in rules.items() if (b := _count_bad(df, ok))]
+
+
+def _check_recall_labels(df: pl.DataFrame) -> list[str]:
+    rules = {
+        "source_url phải là URL HTTPS": pl.col("source_url").str.starts_with("https://"),
+        "source và product_name không được rỗng": (
+            (pl.col("source").str.len_chars() > 0) & (pl.col("product_name").str.len_chars() > 0)
         ),
     }
     return [f"{b} dòng vi phạm: {name}" for name, ok in rules.items() if (b := _count_bad(df, ok))]
@@ -243,6 +268,7 @@ _SEMANTIC: dict[Table, Callable[[pl.DataFrame], list[str]]] = {
     Table.FEATURE_SERIES: _check_feature_series,
     Table.INDICATOR_MATRIX: _check_indicator_matrix,
     Table.ALERTS: _check_alerts,
+    Table.RECALL_LABELS: _check_recall_labels,
 }
 
 

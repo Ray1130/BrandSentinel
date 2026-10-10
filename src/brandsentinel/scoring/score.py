@@ -125,6 +125,8 @@ def score_indicators(
 
         levels = apply_hysteresis(candidates, config)
         for window, persist, level in zip(windows, persistence, levels, strict=True):
+            if level == Level.LOW:
+                continue
             rows_out.append(
                 {
                     "sku": sku,
@@ -139,5 +141,7 @@ def score_indicators(
                 }
             )
 
+    if not rows_out:
+        return empty_table(Table.ALERTS)
     result = pl.DataFrame(rows_out)
     return validate(Table.ALERTS, conform(Table.ALERTS, result)).sort(["sku", "window_end"])

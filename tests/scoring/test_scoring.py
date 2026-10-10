@@ -44,12 +44,29 @@ def test_score_indicators_weights_groups_persistence_and_verification(cfg):
 
     alerts = score_indicators(matrix, cfg)
 
-    assert alerts["score"].to_list() == [5 / 21, 5 / 21, 0.0, 0.0, 0.0]
-    assert alerts["groups_active"].to_list() == [["rating"], ["rating"], [], [], []]
-    assert alerts["persist"].to_list() == [1, 2, 0, 0, 0]
-    assert alerts["verify_flag"].to_list() == [True, False, False, False, False]
-    assert alerts["level"].to_list() == ["LOW", "MEDIUM", "MEDIUM", "MEDIUM", "LOW"]
-    assert alerts["triggered_ids"].to_list()[0] == ["I4", "I5", "I10"]
+    assert alerts["score"].to_list() == [5 / 21, 0.0, 0.0]
+    assert alerts["groups_active"].to_list() == [["rating"], [], []]
+    assert alerts["persist"].to_list() == [2, 0, 0]
+    assert alerts["verify_flag"].to_list() == [False, False, False]
+    assert alerts["level"].to_list() == ["MEDIUM", "MEDIUM", "MEDIUM"]
+    assert alerts["triggered_ids"].to_list()[0] == ["I4", "I5"]
+    assert set(alerts["level"].to_list()) <= {"MEDIUM", "HIGH"}
+
+
+def test_review_bombing_flag_does_not_change_score_or_risk_level(cfg):
+    plain = score_indicators(make_matrix([{"I4", "I5"}, {"I4", "I5"}]), cfg)
+    flagged = score_indicators(make_matrix([{"I4", "I5"}, {"I4", "I5", "I11"}]), cfg)
+
+    assert flagged["score"].to_list() == plain["score"].to_list()
+    assert flagged["level"].to_list() == plain["level"].to_list()
+    assert flagged["verify_flag"].to_list() == [True]
+
+
+def test_score_with_no_medium_or_high_alert_returns_valid_empty_table(cfg):
+    alerts = score_indicators(make_matrix([set()]), cfg)
+
+    assert alerts.is_empty()
+    assert alerts.columns
 
 
 def test_high_requires_cross_group_confirmation_or_severe_override(cfg):
@@ -92,7 +109,7 @@ def test_verification_flag_obeys_configured_all_requirement(cfg):
     thresholds = cfg.thresholds.model_copy(update={"flags": flags})
     all_flags_config = cfg.model_copy(update={"thresholds": thresholds})
 
-    alerts = score_indicators(make_matrix([{"I10"}]), all_flags_config)
+    alerts = score_indicators(make_matrix([{"I4", "I5", "I10"}, {"I4", "I5"}]), all_flags_config)
 
     assert alerts["verify_flag"].to_list() == [False]
 
