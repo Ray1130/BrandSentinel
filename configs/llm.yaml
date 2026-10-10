@@ -1,0 +1,6 @@
+provider: openai
+model: gpt-4o-mini
+api_key_env: OPENAI_API_KEY
+monthly_budget_usd: 5.0
+cache_enabled: true
+cache_key: sha256_canonical_evidence

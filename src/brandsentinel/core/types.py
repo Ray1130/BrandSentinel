@@ -41,6 +41,7 @@ class Table(StrEnum):
     FEATURE_SERIES = "feature_series"
     INDICATOR_MATRIX = "indicator_matrix"
     ALERTS = "alerts"
+    RECALL_LABELS = "recall_labels"
 
 
 INDICATOR_IDS: tuple[str, ...] = tuple(f"I{i}" for i in range(1, 12))

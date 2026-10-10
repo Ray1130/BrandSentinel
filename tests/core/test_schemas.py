@@ -1,3 +1,5 @@
+from datetime import date
+
 import polars as pl
 import pytest
 
@@ -102,6 +104,31 @@ def test_alert_group_outside_contract(mock_tables):
     bad = df.with_columns(pl.Series("groups_active", [["flag"]] * df.height))
     with pytest.raises(DataContractError, match="groups_active"):
         validate(Table.ALERTS, bad)
+
+
+def test_alerts_reject_low_risk_windows(mock_tables):
+    low = mock_tables[Table.ALERTS].head(1).with_columns(pl.lit("LOW").alias("level"))
+    with pytest.raises(DataContractError, match="MEDIUM"):
+        validate(Table.ALERTS, low)
+
+
+def test_recall_labels_require_exact_asin_match():
+    recall = pl.DataFrame(
+        {
+            "sku": ["B0EXAMPLE01"],
+            "category": ["Baby_Products"],
+            "recall_id": ["CPSC-TEST-001"],
+            "recall_date": [date(2025, 1, 1)],
+            "source": ["CPSC"],
+            "source_url": ["https://www.cpsc.gov/Recalls"],
+            "product_name": ["Example baby product"],
+            "match_type": ["exact_asin"],
+        }
+    )
+
+    validate(Table.RECALL_LABELS, recall)
+    with pytest.raises(DataContractError, match="match_type"):
+        validate(Table.RECALL_LABELS, recall.with_columns(pl.lit("fuzzy_name").alias("match_type")))
 
 
 def test_conform_casts_and_rejects_extra(mock_tables):

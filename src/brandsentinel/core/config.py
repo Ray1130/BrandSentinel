@@ -198,6 +198,15 @@ class LlmRefCfg(_Cfg):
     config: str
 
 
+class LlmConfig(_Cfg):
+    provider: Literal["openai"]
+    model: str = Field(min_length=1)
+    api_key_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
+    monthly_budget_usd: float = Field(gt=0)
+    cache_enabled: bool
+    cache_key: Literal["sha256_canonical_evidence"]
+
+
 class LoggingCfg(_Cfg):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"]
     audit_log: bool
@@ -395,6 +404,7 @@ class Config(_Cfg):
     default: DefaultConfig
     indicators: IndicatorsConfig
     thresholds: ThresholdsConfig
+    llm: LlmConfig
     root: Path
 
     @model_validator(mode="after")
@@ -456,10 +466,12 @@ def load_config(config_dir: Path | str | None = None) -> Config:
     """Nạp và kiểm tra cả ba file cấu hình. Ném ConfigError nếu có lỗi."""
     cdir = find_config_dir(config_dir).resolve()
     try:
+        default = _validate(DefaultConfig, cdir / "default.yaml")
         return Config(
-            default=_validate(DefaultConfig, cdir / "default.yaml"),
+            default=default,
             indicators=_validate(IndicatorsConfig, cdir / "indicators.yaml"),
             thresholds=_validate(ThresholdsConfig, cdir / "thresholds.yaml"),
+            llm=_validate(LlmConfig, cdir.parent / default.llm.config),
             root=cdir.parent,
         )
     except ValidationError as e:  # lỗi nhất quán giữa các file

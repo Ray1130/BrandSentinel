@@ -1,4 +1,4 @@
-"""Dữ liệu mock cho cả 6 bảng, ĐÚNG hợp đồng dữ liệu, để P1/P2/P3 làm việc song song.
+"""Dữ liệu mock đúng hợp đồng để P1/P2/P3 làm việc song song.
 
     from brandsentinel.testing.mock_data import make_all
     tables = make_all(seed=42)            # dict[Table, pl.DataFrame]
@@ -24,7 +24,7 @@ import polars as pl
 
 from brandsentinel.core.config import Config, get_config
 from brandsentinel.core.ids import review_id
-from brandsentinel.core.schemas import conform, validate
+from brandsentinel.core.schemas import conform, empty_table, validate
 from brandsentinel.core.types import (
     ASPECTS,
     FEATURES_BY_INDICATOR,
@@ -446,7 +446,7 @@ def make_alerts(indicator_matrix: pl.DataFrame, cfg: Config) -> pl.DataFrame:
                 "groups_active": pl.List(pl.String),
                 "triggered_ids": pl.List(pl.String),
             },
-        ),
+        ).filter(pl.col("level").is_in([Level.MEDIUM.value, Level.HIGH.value])),
     )
 
 
@@ -482,6 +482,7 @@ def make_all(
         Table.FEATURE_SERIES: feats,
         Table.INDICATOR_MATRIX: matrix,
         Table.ALERTS: alerts,
+        Table.RECALL_LABELS: empty_table(Table.RECALL_LABELS),
     }
     for t, df in tables.items():
         validate(t, df)

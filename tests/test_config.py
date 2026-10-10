@@ -29,6 +29,9 @@ def test_load_real_configs():
     assert cfg.indicators.flag_ids == ["I10", "I11"]
     assert cfg.indicators.ids_in_group("content") == ["I7", "I8", "I9"]
     assert cfg.default.time.window_days == 7
+    assert cfg.llm.provider == "openai"
+    assert cfg.llm.api_key_env == "OPENAI_API_KEY"
+    assert cfg.llm.monthly_budget_usd == 5.0
     assert cfg.thresholds.calibration.fallback.tau1 < cfg.thresholds.calibration.fallback.tau2
     assert cfg.path("data_raw") == REPO / "data" / "raw"
 
@@ -70,4 +73,10 @@ def test_flag_must_not_be_scored(cfg_dir: Path):
 def test_missing_file(cfg_dir: Path):
     (cfg_dir / "thresholds.yaml").unlink()
     with pytest.raises(ConfigError, match="thresholds.yaml"):
+        load_config(cfg_dir)
+
+
+def test_llm_budget_must_be_positive(cfg_dir: Path):
+    _edit(cfg_dir / "llm.yaml", lambda d: d.update(monthly_budget_usd=0))
+    with pytest.raises(ConfigError, match="llm.yaml"):
         load_config(cfg_dir)

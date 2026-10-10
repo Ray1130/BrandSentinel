@@ -3,6 +3,7 @@
 Bố cục:  <zone>/<table>/category=<category>/<yyyy-mm>.parquet
   zone `interim`  : clean_reviews, daily_agg, nlp_features
   zone `processed`: feature_series, indicator_matrix, alerts, recommendations/
+  zone `interim`  : recall_labels (verified external labels, partitioned by recall_date)
 
 Ghi là IDEMPOTENT theo (category, tháng, SKU, khoảng ngày): dòng cũ cùng SKU nằm trong khoảng
 ngày [min, max] của dữ liệu mới bị thay thế, các dòng khác được giữ nguyên. Bảng không có cột
@@ -31,6 +32,7 @@ ZONE: dict[Table, str] = {
     Table.FEATURE_SERIES: "data_processed",
     Table.INDICATOR_MATRIX: "data_processed",
     Table.ALERTS: "data_processed",
+    Table.RECALL_LABELS: "data_interim",
 }
 _SAFE = re.compile(r"[A-Za-z0-9_.\-]+")
 
@@ -116,6 +118,13 @@ def read_table(
 def recommendation_path(cfg: Config, category: str, sku: str, window_end: date) -> Path:
     name = f"{_safe(sku)}_{window_end.isoformat()}.json"
     return cfg.path("data_processed") / "recommendations" / f"category={_safe(category)}" / name
+
+
+def recommendation_cache_path(cfg: Config, evidence_hash: str) -> Path:
+    """Return the stable recommendation path for a canonical evidence-package SHA-256."""
+    if not re.fullmatch(r"[0-9a-f]{64}", evidence_hash):
+        raise ValueError("evidence_hash phải là SHA-256 dạng hex thường")
+    return cfg.path("data_processed") / "recommendations" / "cache" / f"{evidence_hash}.json"
 
 
 def write_json(path: Path, obj: Any) -> Path:

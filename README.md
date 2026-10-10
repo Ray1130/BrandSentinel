@@ -73,8 +73,8 @@ phân phối nền của từng ngành hàng.
 ## Thiết kế mã nguồn
 
 - **Mô-đun hóa theo giai đoạn**, mỗi giai đoạn đọc và ghi bảng Parquet nên chạy lại độc lập được.
-- **Hợp đồng dữ liệu** gồm 6 bảng (`clean_reviews`, `daily_agg`, `nlp_features`, `feature_series`,
-  `indicator_matrix`, `alerts`), được kiểm tự động bằng Pandera ở `core/schemas.py`.
+- **Hợp đồng dữ liệu** gồm 7 bảng (`clean_reviews`, `daily_agg`, `nlp_features`, `feature_series`,
+  `indicator_matrix`, `alerts`, `recall_labels`), được kiểm tự động bằng Pandera ở `core/schemas.py`.
   Mô tả chi tiết: [`docs/data_contract.md`](docs/data_contract.md).
 - **Chỉ báo cắm được:** mỗi chỉ báo kế thừa `detection/base.Indicator` và đăng ký bằng `@register`;
   bật/tắt, trọng số và tham số nằm ở `configs/indicators.yaml`.
@@ -93,7 +93,7 @@ src/brandsentinel/
 ├── llm/             # gói bằng chứng, prompt, kiểm tra đầu ra, dự phòng
 ├── evaluation/      # ghép với dữ liệu thu hồi, chỉ số, baseline so sánh, dữ liệu tổng hợp
 ├── serving/         # API, dashboard, thông báo
-├── testing/         # dữ liệu mock đúng hợp đồng cho cả 6 bảng
+├── testing/         # dữ liệu mock đúng hợp đồng cho cả 7 bảng
 ├── pipeline.py      # nối các giai đoạn
 └── cli.py           # lệnh `bs`
 configs/             # default.yaml, indicators.yaml, thresholds.yaml, lexicon_*.yaml, llm.yaml

@@ -11,6 +11,7 @@ from brandsentinel.core.io import (
     partition_path,
     read_json,
     read_table,
+    recommendation_cache_path,
     recommendation_path,
     write_json,
     write_table,
@@ -95,3 +96,31 @@ def test_json_utf8_and_audit(cfg_tmp):
     assert audit.to_dataframe()["removed"].to_list() == [10, 5]
     out = audit.write(cfg_tmp.path("data_interim") / "audit")
     assert json.loads(out.read_text(encoding="utf-8").splitlines()[0])["step"] == "dedup"
+
+
+def test_recall_labels_roundtrip_and_idempotence(cfg_tmp):
+    labels = pl.DataFrame(
+        {
+            "sku": ["B0EXAMPLE01"],
+            "category": ["Baby_Products"],
+            "recall_id": ["CPSC-TEST-001"],
+            "recall_date": [date(2025, 1, 1)],
+            "source": ["CPSC"],
+            "source_url": ["https://www.cpsc.gov/Recalls"],
+            "product_name": ["Example baby product"],
+            "match_type": ["exact_asin"],
+        }
+    )
+
+    write_table(labels, Table.RECALL_LABELS, cfg_tmp)
+    write_table(labels, Table.RECALL_LABELS, cfg_tmp)
+
+    saved = read_table(Table.RECALL_LABELS, cfg_tmp, category="Baby_Products", check=True)
+    assert saved.equals(labels)
+
+
+def test_recommendation_cache_path_uses_evidence_hash(cfg_tmp):
+    path = recommendation_cache_path(cfg_tmp, "a" * 64)
+    assert path == cfg_tmp.path("data_processed") / "recommendations" / "cache" / f"{'a' * 64}.json"
+    with pytest.raises(ValueError, match="SHA-256"):
+        recommendation_cache_path(cfg_tmp, "../unsafe")
