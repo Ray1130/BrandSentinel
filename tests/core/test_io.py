@@ -109,6 +109,7 @@ def test_recall_labels_roundtrip_and_idempotence(cfg_tmp):
             "source_url": ["https://www.cpsc.gov/Recalls"],
             "product_name": ["Example baby product"],
             "match_type": ["exact_asin"],
+            "match_confidence": [1.0],
         }
     )
 
