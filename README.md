@@ -135,7 +135,16 @@ uv run poe check           # lint + format-check + test
 | Test / lint / format | `uv run poe test` / `uv run poe lint` / `uv run poe fmt` |
 | Chạy một giai đoạn | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
 | Chấm điểm từ `indicator_matrix` và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy detect trước) |
+| Hiệu chỉnh ngưỡng và kiểm tra 4 khủng hoảng synthetic | `uv run python scripts/calibrate_thresholds.py --category Baby_Products` (cần có `feature_series` đã lưu; chỉ in đề xuất, không sửa YAML) |
 | Dữ liệu mock | `from brandsentinel.testing.mock_data import make_all` |
+
+Báo cáo calibration dùng phân vị/floor/fallback đã cấu hình và đánh giá các ca volume, rating,
+safety-keyword, review bombing qua detector/scorer thật. Mặc định script sweep `k/m/n`, ngưỡng
+`min_hits`/người dùng phân biệt của I8 và penalty PELT của I5, chọn recall cao nhất thỏa ngưỡng
+false alarm mục tiêu 5% (nếu không ứng viên nào thỏa, báo cáo ứng viên tốt nhất kèm cảnh báo).
+Tỷ lệ false alarm trên control synthetic chỉ là proxy, không phải precision/recall thực tế.
+Có thể dùng `--output reports/calibration.json` để lưu JSON hoặc `--no-tune-triggers` để chỉ chạy
+đánh giá và báo cáo ngưỡng.
 
 Tải một category Amazon Reviews 2023 và chỉ giữ SKU đủ lịch sử theo `configs/default.yaml`:
 
