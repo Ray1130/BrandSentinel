@@ -210,6 +210,59 @@ def _refuse_to_drop_content_features(fs: pl.DataFrame, cfg: Config, category: st
         )
 
 
+def run_explain(
+    category: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    config: Config | None = None,
+    force_fallback: bool = False,
+) -> list[dict[str, Any]]:
+    """Đọc alerts mức HIGH và clean_reviews của category, sinh khuyến nghị SCCT (Stage explain)."""
+    cfg = config or load_config()
+    try:
+        alerts = read_table(Table.ALERTS, cfg, category=category)
+        clean = read_table(Table.CLEAN_REVIEWS, cfg, category=category)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Chưa có alerts/clean_reviews của '{category}': "
+            f"hãy chạy stage `score` và `preprocess` trước"
+        ) from e
+
+    nlp = _read_or_none(Table.NLP_FEATURES, cfg, category)
+
+    from brandsentinel.core.io import recommendation_path, write_json
+    from brandsentinel.llm.client import call_llm_with_guardrails
+    from brandsentinel.llm.evidence import extract_high_alerts_evidence_packs
+
+    if start is not None:
+        alerts = alerts.filter(pl.col("window_end") >= start)
+    if end is not None:
+        alerts = alerts.filter(pl.col("window_end") <= end)
+
+    packs = extract_high_alerts_evidence_packs(
+        alerts, clean, nlp_features_df=nlp, cfg=cfg, min_level="HIGH"
+    )
+
+    recs: list[dict[str, Any]] = []
+    for pack in packs:
+        rec = call_llm_with_guardrails(pack, cfg, force_fallback=force_fallback)
+        out_dict = rec.model_dump()
+        recs.append(out_dict)
+        w_end = date.fromisoformat(pack.window_end)
+        path = recommendation_path(cfg, category, pack.sku, w_end)
+        write_json(path, out_dict)
+
+    summary_path = (
+        cfg.path("data_processed")
+        / "recommendations"
+        / f"category={category}"
+        / "recommendations.json"
+    )
+    write_json(summary_path, recs)
+    return recs
+
+
 def run_stage(
     stage: str,
     category: str,
@@ -251,4 +304,12 @@ def run_stage(
                 else {}
             ),
         }
+    if stage == "explain":
+        recs = run_explain(category, start=start, end=end, config=cfg)
+        return {
+            "recommendations": len(recs),
+            "skus": len({r["sku"] for r in recs}),
+            "fallback_count": sum(1 for r in recs if r.get("is_fallback")),
+        }
     raise NotImplementedError(stage)
+
