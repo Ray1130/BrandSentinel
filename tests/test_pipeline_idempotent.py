@@ -1,12 +1,6 @@
-"""Chay lai khong nhan doi du lieu: preprocess, features, va qua CLI `bs run`.
+"""Integration and idempotency checks for `bs run` pipeline stages."""
 
-CHUA chay duoc ngoai repo. Hai cho de lech voi repo that (sua tai cho):
-- fixture `cfg`: cach tro duong dan ra thu muc tam (cfg.default.paths.*).
-- `_raw_reviews`: ten truong raw (theo Amazon Reviews 2023: parent_asin, rating, title, text,
-  user_id, timestamp (ms, UTC), verified_purchase).
-"""
-
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 import polars as pl
@@ -17,13 +11,15 @@ from brandsentinel import cli, pipeline
 from brandsentinel.core.config import load_config
 from brandsentinel.core.io import read_table, write_table
 from brandsentinel.core.types import Table
-from brandsentinel.testing.mock_data import make_all
+from brandsentinel.testing.mock_data import make_all, make_clean_reviews, make_nlp_features
 
 KEYS = {
     Table.CLEAN_REVIEWS: ["review_id"],
     Table.DAILY_AGG: ["sku", "date"],
     Table.NLP_FEATURES: ["review_id"],
     Table.FEATURE_SERIES: ["sku", "window_end", "indicator_id", "feature"],
+    Table.INDICATOR_MATRIX: ["sku", "window_end", "indicator_id"],
+    Table.ALERTS: ["sku", "window_end"],
 }
 
 
@@ -169,3 +165,75 @@ def test_preprocess_rerun_no_duplicates(cfg):
 
     for t in tables:
         assert_same_no_dups(first[t], second[t], t)
+
+
+def test_cli_pipeline_two_categories_rerun_no_duplicates(monkeypatch, cfg, tmp_path):
+    categories = ("Baby_Products", "Home_and_Kitchen")
+    source_paths = {}
+    for category in categories:
+        clean = make_clean_reviews(
+            n_skus=3,
+            days=190,
+            seed=42,
+            category=category,
+            start=date(2023, 1, 2),
+        )
+        source = clean.select(
+            pl.col("sku").alias("parent_asin"),
+            "rating",
+            pl.col("text_raw").alias("text"),
+            "user_id",
+            pl.col("ts").dt.epoch("ms").alias("timestamp"),
+            "verified_purchase",
+        )
+        source_path = tmp_path / f"{category}.jsonl"
+        source.write_ndjson(source_path)
+        source_paths[category] = source_path
+
+    nlp_calls = []
+
+    def mock_nlp(clean, _cfg):
+        nlp_calls.append(clean.height)
+        return make_nlp_features(clean, seed=42)
+
+    monkeypatch.setattr(cli, "load_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "_default_nlp_runner", mock_nlp)
+
+    stage_outputs = {
+        "preprocess": (Table.CLEAN_REVIEWS, Table.DAILY_AGG),
+        "features": (Table.NLP_FEATURES, Table.FEATURE_SERIES),
+        "detect": (Table.INDICATOR_MATRIX,),
+        "score": (Table.ALERTS,),
+    }
+
+    def run_pipeline():
+        for category in categories:
+            for stage in stage_outputs:
+                args = ["run", "--stage", stage, "--category", category]
+                if stage == "preprocess":
+                    args.extend(["--source", str(source_paths[category])])
+                result = CliRunner().invoke(cli.app, args)
+                assert result.exit_code == 0, f"{stage}/{category}: {result.output}"
+
+    run_pipeline()
+    first = {
+        (category, table): snapshot(cfg, table, category)
+        for category in categories
+        for tables in stage_outputs.values()
+        for table in tables
+    }
+    for category in categories:
+        matrix = first[(category, Table.INDICATOR_MATRIX)]
+        assert set(matrix["indicator_id"].unique()) == {f"I{i}" for i in range(1, 12)}
+
+    run_pipeline()
+    second = {
+        (category, table): snapshot(cfg, table, category)
+        for category in categories
+        for tables in stage_outputs.values()
+        for table in tables
+    }
+    for key in first:
+        table = key[1]
+        assert_same_no_dups(first[key], second[key], table)
+    assert len(nlp_calls) == len(categories), "NLP chỉ nên tính ở lần đầu cho mỗi category"

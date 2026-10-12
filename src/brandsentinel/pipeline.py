@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -162,6 +163,39 @@ def run_features(
     return fs
 
 
+def run_detect(
+    category: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    config: Config | None = None,
+) -> pl.DataFrame:
+    """Read the full feature history, detect I1-I11, and persist the requested date range."""
+    cfg = config or load_config()
+    if start and end and start > end:
+        raise ValueError("start phải trước hoặc bằng end")
+    try:
+        feature_series = read_table(Table.FEATURE_SERIES, cfg, category=category)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Chua co feature_series cua '{category}': "
+            f"chay `bs run --stage features --category {category}` truoc"
+        ) from e
+
+    from brandsentinel.detection.stage import detect  # noqa: PLC0415
+
+    matrix = detect(feature_series, cfg)
+    if start is not None:
+        matrix = matrix.filter(pl.col("window_end") >= start)
+    if end is not None:
+        matrix = matrix.filter(pl.col("window_end") <= end)
+    if matrix.is_empty():
+        log.warning("detect: khong co dong nao trong [%s, %s] cho '%s'", start, end, category)
+        return matrix
+    write_table(matrix, Table.INDICATOR_MATRIX, cfg)
+    return matrix
+
+
 def run_score(
     category: str,
     *,
@@ -285,12 +319,28 @@ def run_stage(
             "audit_log": str(audit) if audit else None,
         }
     if stage == "features":
-        fs = run_features(category, start=start, end=end, config=cfg, with_nlp=with_nlp)
+        fs = run_features(
+            category,
+            start=start,
+            end=end,
+            config=cfg,
+            with_nlp=with_nlp,
+        )
         by = fs.group_by("indicator_id").len().sort("indicator_id")
         return {
             "feature_series": fs.height,
             "skus": fs["sku"].n_unique() if fs.height else 0,
             "rows_by_indicator": dict(zip(by["indicator_id"], by["len"], strict=True)),
+        }
+    if stage == "detect":
+        matrix = run_detect(category, start=start, end=end, config=cfg)
+        by = matrix.group_by("indicator_id").len().sort("indicator_id") if matrix.height else None
+        return {
+            "indicator_matrix": matrix.height,
+            "skus": matrix["sku"].n_unique() if matrix.height else 0,
+            "rows_by_indicator": (
+                dict(zip(by["indicator_id"], by["len"], strict=True)) if by is not None else {}
+            ),
         }
     if stage == "score":
         alerts = run_score(category, start=start, end=end, config=cfg)
@@ -312,4 +362,3 @@ def run_stage(
             "fallback_count": sum(1 for r in recs if r.get("is_fallback")),
         }
     raise NotImplementedError(stage)
-

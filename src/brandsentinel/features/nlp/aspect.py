@@ -11,7 +11,7 @@ import re
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import polars as pl
@@ -19,7 +19,9 @@ import yaml
 
 from brandsentinel.core.config import Config, get_config
 from brandsentinel.core.types import ASPECTS
-from brandsentinel.features.nlp.sentiment import SentimentAnalyzer, get_sentiment_analyzer
+
+if TYPE_CHECKING:
+    from brandsentinel.features.nlp.sentiment import SentimentAnalyzer
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +49,11 @@ class AspectExtractor:
         sentiment_analyzer: SentimentAnalyzer | None = None,
     ) -> None:
         self.cfg = cfg or get_config()
-        self.sentiment_analyzer = sentiment_analyzer or get_sentiment_analyzer(self.cfg)
+        if sentiment_analyzer is None:
+            from brandsentinel.features.nlp.sentiment import get_sentiment_analyzer
+
+            sentiment_analyzer = get_sentiment_analyzer(self.cfg)
+        self.sentiment_analyzer = sentiment_analyzer
 
         # Xác định đường dẫn file cấu hình từ điển
         if config_path is not None:
