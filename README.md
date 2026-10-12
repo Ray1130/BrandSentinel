@@ -134,7 +134,8 @@ uv run poe check           # lint + format-check + test
 |---|---|
 | Test / lint / format | `uv run poe test` / `uv run poe lint` / `uv run poe fmt` |
 | Chạy một giai đoạn | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
-| Chấm điểm từ `indicator_matrix` và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy detect trước) |
+| Phát hiện I1–I11 và ghi `indicator_matrix` | `uv run bs run --stage detect --category Baby_Products` (cần chạy `features` trước) |
+| Chấm điểm từ `indicator_matrix` và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy `detect` trước) |
 | Hiệu chỉnh ngưỡng và kiểm tra 4 khủng hoảng synthetic | `uv run python scripts/calibrate_thresholds.py --category Baby_Products` (cần có `feature_series` đã lưu; chỉ in đề xuất, không sửa YAML) |
 | Dữ liệu mock | `from brandsentinel.testing.mock_data import make_all` |
 
