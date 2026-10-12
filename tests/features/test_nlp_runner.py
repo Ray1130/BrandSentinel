@@ -1,24 +1,18 @@
 """Unit and integration tests for production runner and evaluation scripts (Phase 3B-1)."""
 
-import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 import polars as pl
-import pytest
-
-from brandsentinel.core.io import write_table
-from brandsentinel.core.types import Table
-from brandsentinel.testing.mock_data import make_clean_reviews
 from scripts.evaluate_risk import evaluate_method, run_evaluation
 from scripts.run_nlp import (
     compute_data_quality_report,
     resolve_categories,
     run_nlp_for_category,
 )
+
+from brandsentinel.core.io import write_table
+from brandsentinel.core.types import Table
+from brandsentinel.testing.mock_data import make_clean_reviews
 
 
 def test_category_resolution(cfg):
