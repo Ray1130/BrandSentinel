@@ -38,7 +38,7 @@ tiering:
     min_persist_windows: 2                    # tín hiệu duy trì >= 2 cửa sổ liên tiếp
     min_groups_active: 2                      # hoặc >= 2/3 nhóm xác nhận
   high:
-    min_groups_active: 3                      # xác nhận đồng thời cả 3 nhóm
+    min_groups_active: 3                      # xác nhận đồng thời 3 nhóm (volume, rating, content)
     allow_severe_override: true               # hoặc bằng chứng I8 nghiêm trọng (indicators.yaml -> I8.params)
   # Đủ điểm nhưng thiếu xác nhận: hạ xuống mức liền kề thấp hơn rồi kiểm lại điều kiện của mức đó
   on_missing_confirmation: step_down_and_recheck

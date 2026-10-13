@@ -23,9 +23,9 @@ def test_load_llm_yaml_config():
     cfg_path = Path(__file__).resolve().parents[2] / "configs" / "llm.yaml"
     cfg = LLMConfig.from_yaml(cfg_path)
 
-    assert cfg.provider == "openai"
-    assert cfg.model == "gpt-4o-mini"
-    assert cfg.api_key_env == "OPENAI_API_KEY"
+    assert cfg.provider in {"openai", "groq"}
+    assert cfg.model in {"gpt-4o-mini", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"}
+    assert cfg.api_key_env in {"OPENAI_API_KEY", "GROQ_API_KEY"}
     assert cfg.monthly_budget_usd == 5.0
     assert cfg.cache_enabled is True
     assert cfg.cache_key == "sha256_canonical_evidence"

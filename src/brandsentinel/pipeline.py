@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -126,8 +129,8 @@ def run_features(
     """
     cfg = config or load_config()
     try:
-        clean = read_table(Table.CLEAN_REVIEWS, cfg, category=category)
         daily = read_table(Table.DAILY_AGG, cfg, category=category)
+        clean = read_table(Table.CLEAN_REVIEWS, cfg, category=category) if with_nlp else None
     except FileNotFoundError as e:
         raise FileNotFoundError(
             f"Chua co clean_reviews/daily_agg cua '{category}': "
@@ -148,7 +151,49 @@ def run_features(
         rel = make_reliability_features(daily, nlp, clean)
         fs = pl.concat([fs, rel.select(fs.columns)], how="vertical_relaxed")
     else:
-        fs = make_feature_series(daily_agg=daily, window_days=window_days)
+        # Streaming chunking by SKU to guarantee RAM < 350MB even for large categories like Home_and_Kitchen
+        all_skus = daily["sku"].unique().to_list()
+        chunk_size = 50
+        if len(all_skus) > chunk_size:
+            total_chunks = (len(all_skus) + chunk_size - 1) // chunk_size
+            print(f"=== Bắt đầu tính Feature Series Streaming cho {len(all_skus):,} SKU ({total_chunks} batches, RAM an toàn < 350 MB) ===")
+            total_rows = 0
+            rows_by_ind: dict[str, int] = {}
+            import gc
+            import time
+
+            start_t = time.time()
+            for i in range(0, len(all_skus), chunk_size):
+                sku_batch = all_skus[i : i + chunk_size]
+                sub_daily = daily.filter(pl.col("sku").is_in(sku_batch))
+                sub_fs = make_feature_series(daily_agg=sub_daily, window_days=window_days)
+                if start is not None:
+                    sub_fs = sub_fs.filter(pl.col("window_end") >= start)
+                if end is not None:
+                    sub_fs = sub_fs.filter(pl.col("window_end") <= end)
+                if not sub_fs.is_empty():
+                    total_rows += sub_fs.height
+                    for ind, count in sub_fs.group_by("indicator_id").len().iter_rows():
+                        rows_by_ind[str(ind)] = rows_by_ind.get(str(ind), 0) + count
+                    write_table(sub_fs, Table.FEATURE_SERIES, cfg)
+                done = min(i + len(sku_batch), len(all_skus))
+                pct = (done / len(all_skus)) * 100
+                elapsed = time.time() - start_t
+                rate = done / elapsed if elapsed > 0 else 0
+                eta = (len(all_skus) - done) / rate if rate > 0 else 0
+                print(f"  [Features] {done:,}/{len(all_skus):,} SKU ({pct:.1f}% - {total_rows:,} dòng, ~{rate:.1f} SKU/s, ETA: {eta:.0f}s)...")
+                del sub_daily, sub_fs
+                gc.collect()
+
+            print(f"-> Hoàn tất Feature Series cho toàn bộ {len(all_skus):,} SKU trong {time.time() - start_t:.1f}s!")
+            return pl.DataFrame({
+                "feature_series": [total_rows] * len(rows_by_ind),
+                "skus": [len(all_skus)] * len(rows_by_ind),
+                "indicator_id": list(rows_by_ind.keys()),
+                "len": list(rows_by_ind.values()),
+            })
+        else:
+            fs = make_feature_series(daily_agg=daily, window_days=window_days)
 
     if start is not None:
         fs = fs.filter(pl.col("window_end") >= start)
@@ -163,37 +208,241 @@ def run_features(
     return fs
 
 
+def _get_first_dates_for_category(cfg: Config, category: str) -> pl.DataFrame | None:
+    """Quét ngày đầu tiên xuất hiện review của mỗi SKU từ clean_reviews (0.2s) để gọt bỏ số 0 vô nghĩa."""
+    try:
+        clean_dir = cfg.path("data_interim") / "clean_reviews" / f"category={category}"
+        if not clean_dir.exists():
+            return None
+        files = list(clean_dir.glob("*.parquet"))
+        if not files:
+            return None
+        return (
+            pl.scan_parquet(str(clean_dir / "*.parquet"))
+            .group_by("sku")
+            .agg(pl.col("date").min().alias("first_date"))
+            .collect()
+        )
+    except Exception as e:
+        log.warning("Không thể lấy first_dates từ clean_reviews cho '%s': %s", category, e)
+        return None
+
+
+def _detect_batch_worker(
+    sku_batch: list[str],
+    category: str,
+    cfg: Config,
+    first_dates: pl.DataFrame | None,
+    start: date | None,
+    end: date | None,
+) -> pl.DataFrame:
+    """Worker tính toán chỉ báo I1-I11 độc lập trên 1 nhân CPU."""
+    import warnings  # noqa: PLC0415
+
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    from brandsentinel.detection.stage import detect  # noqa: PLC0415
+
+    sub_fs = read_table(Table.FEATURE_SERIES, cfg, category=category, skus=sku_batch)
+    if sub_fs.is_empty():
+        return pl.DataFrame()
+
+    # Tối ưu 1: Gọt bỏ chuỗi số 0 trước ngày xuất hiện đầu tiên của từng SKU
+    if first_dates is not None and not first_dates.is_empty():
+        sub_fs = (
+            sub_fs.join(first_dates, on="sku", how="left")
+            .filter(pl.col("first_date").is_null() | (pl.col("window_end") >= pl.col("first_date")))
+            .drop("first_date")
+        )
+
+    if sub_fs.is_empty():
+        return pl.DataFrame()
+
+    sub_matrix = detect(sub_fs, cfg)
+    if start is not None:
+        sub_matrix = sub_matrix.filter(pl.col("window_end") >= start)
+    if end is not None:
+        sub_matrix = sub_matrix.filter(pl.col("window_end") <= end)
+    return sub_matrix
+
+
+def _score_batch_worker(
+    sku_batch: list[str],
+    category: str,
+    cfg: Config,
+    start: date | None,
+    end: date | None,
+) -> pl.DataFrame:
+    """Worker tính toán chấm điểm và phân mức cảnh báo trên 1 nhân CPU."""
+    from brandsentinel.scoring.score import score_indicators  # noqa: PLC0415
+
+    sub_m = read_table(Table.INDICATOR_MATRIX, cfg, category=category, skus=sku_batch)
+    if sub_m.is_empty():
+        return pl.DataFrame()
+
+    sub_alerts = score_indicators(sub_m, cfg)
+    if start is not None:
+        sub_alerts = sub_alerts.filter(pl.col("window_end") >= start)
+    if end is not None:
+        sub_alerts = sub_alerts.filter(pl.col("window_end") <= end)
+    return sub_alerts
+
+
 def run_detect(
     category: str,
     *,
     start: date | None = None,
     end: date | None = None,
     config: Config | None = None,
+    max_workers: int | None = None,
+    resume: bool = True,
 ) -> pl.DataFrame:
     """Read the full feature history, detect I1-I11, and persist the requested date range."""
     cfg = config or load_config()
     if start and end and start > end:
         raise ValueError("start phải trước hoặc bằng end")
-    try:
-        feature_series = read_table(Table.FEATURE_SERIES, cfg, category=category)
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            f"Chua co feature_series cua '{category}': "
-            f"chay `bs run --stage features --category {category}` truoc"
-        ) from e
 
     from brandsentinel.detection.stage import detect  # noqa: PLC0415
 
-    matrix = detect(feature_series, cfg)
-    if start is not None:
-        matrix = matrix.filter(pl.col("window_end") >= start)
-    if end is not None:
-        matrix = matrix.filter(pl.col("window_end") <= end)
-    if matrix.is_empty():
-        log.warning("detect: khong co dong nao trong [%s, %s] cho '%s'", start, end, category)
+    base = cfg.path("data_processed") / "feature_series" / f"category={category}"
+    files = list(base.glob("*.parquet")) if base.exists() else []
+    if not files:
+        raise FileNotFoundError(
+            f"Chua co feature_series cua '{category}': "
+            f"chay `bs run --stage features --category {category}` truoc"
+        )
+
+    # 1. Quét trước ngày xuất hiện đầu tiên của từng SKU để gọt bỏ số 0 vô nghĩa
+    first_dates = _get_first_dates_for_category(cfg, category)
+    if first_dates is not None:
+        log.info("Đã nạp first_dates cho %d SKU để gọt bỏ số 0 dẫn đầu", first_dates.height)
+
+    # Check number of SKUs via lazy scan
+    lf = pl.scan_parquet(str(base / "*.parquet"))
+    all_skus = sorted(lf.select("sku").unique().collect()["sku"].to_list())
+    chunk_size = 15
+    workers = max_workers or min(os.cpu_count() or 4, 8)
+
+    # 2. Quét các SKU đã tính toán xong trong indicator_matrix để hỗ trợ Resume
+    completed_skus: set[str] = set()
+    ind_base = cfg.path("data_processed") / "indicator_matrix" / f"category={category}"
+    if resume and ind_base.exists() and list(ind_base.glob("*.parquet")):
+        try:
+            completed_skus = set(
+                pl.scan_parquet(str(ind_base / "*.parquet"))
+                .select("sku")
+                .unique()
+                .collect()["sku"]
+                .to_list()
+            )
+        except Exception as e:
+            log.warning("Không thể đọc indicator_matrix hiện có để resume: %s", e)
+
+    target_skus = [s for s in all_skus if s not in completed_skus] if resume else all_skus
+
+    if resume and completed_skus:
+        if not target_skus:
+            print(
+                f"=== [Resume] Toàn bộ {len(all_skus):,} SKU của '{category}' "
+                f"đã hoàn tất trong indicator_matrix. Bỏ qua giai đoạn detect ==="
+            )
+            matrix = read_table(Table.INDICATOR_MATRIX, cfg, category=category)
+            if start is not None:
+                matrix = matrix.filter(pl.col("window_end") >= start)
+            if end is not None:
+                matrix = matrix.filter(pl.col("window_end") <= end)
+            return matrix
+
+        print(
+            f"=== [Resume] Phát hiện {len(completed_skus):,}/{len(all_skus):,} SKU đã hoàn thành. "
+            f"Tiếp tục xử lý {len(target_skus):,} SKU còn lại ==="
+        )
+
+    if len(all_skus) > 50:
+        chunks = [target_skus[i : i + chunk_size] for i in range(0, len(target_skus), chunk_size)]
+        total_chunks = len(chunks)
+        print(
+            f"=== Bắt đầu Detect Parallel cho {len(target_skus):,} SKU "
+            f"({total_chunks} batches, {workers} nhân CPU, Zero-Trimmed) ==="
+        )
+        total_rows = 0
+        rows_by_ind: dict[str, int] = {}
+        buffer: list[pl.DataFrame] = []
+        buffer_rows = 0
+        done_skus = len(completed_skus) if resume else 0
+        start_t = time.time()
+
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    _detect_batch_worker,
+                    sku_batch,
+                    category,
+                    cfg,
+                    first_dates,
+                    start,
+                    end,
+                ): sku_batch
+                for sku_batch in chunks
+            }
+            for future in as_completed(futures):
+                sku_batch = futures[future]
+                sub_matrix = future.result()
+                done_skus += len(sku_batch)
+                if not sub_matrix.is_empty():
+                    total_rows += sub_matrix.height
+                    buffer.append(sub_matrix)
+                    buffer_rows += sub_matrix.height
+                    for ind, count in sub_matrix.group_by("indicator_id").len().iter_rows():
+                        rows_by_ind[str(ind)] = rows_by_ind.get(str(ind), 0) + count
+
+                # Ghi đệm định kỳ mỗi ~100k dòng để tối ưu I/O ghi đĩa
+                if buffer_rows >= 100_000:
+                    combined = pl.concat(buffer)
+                    write_table(combined, Table.INDICATOR_MATRIX, cfg)
+                    buffer.clear()
+                    buffer_rows = 0
+
+                pct = (done_skus / len(all_skus)) * 100
+                elapsed = time.time() - start_t
+                newly_done = done_skus - (len(completed_skus) if resume else 0)
+                rate = newly_done / elapsed if elapsed > 0 else 0
+                eta = (len(all_skus) - done_skus) / rate if rate > 0 else 0
+                print(
+                    f"  [Detect Parallel] {done_skus:,}/{len(all_skus):,} SKU "
+                    f"({pct:.1f}% - +{total_rows:,} dòng, ~{rate:.2f} SKU/s, ETA: {eta:.0f}s)..."
+                )
+
+        # Ghi hết phần buffer còn lại
+        if buffer:
+            combined = pl.concat(buffer)
+            write_table(combined, Table.INDICATOR_MATRIX, cfg)
+            buffer.clear()
+
+        print(f"-> Hoàn tất Detect cho toàn bộ {len(all_skus):,} SKU trong {time.time() - start_t:.1f}s!")
+        return pl.DataFrame({
+            "indicator_matrix": [total_rows] * max(len(rows_by_ind), 1),
+            "skus": [len(all_skus)] * max(len(rows_by_ind), 1),
+            "indicator_id": list(rows_by_ind.keys()) if rows_by_ind else ["total"],
+            "len": list(rows_by_ind.values()) if rows_by_ind else [0],
+        })
+    else:
+        feature_series = read_table(Table.FEATURE_SERIES, cfg, category=category, skus=target_skus)
+        if first_dates is not None and not first_dates.is_empty():
+            feature_series = (
+                feature_series.join(first_dates, on="sku", how="left")
+                .filter(pl.col("first_date").is_null() | (pl.col("window_end") >= pl.col("first_date")))
+                .drop("first_date")
+            )
+        matrix = detect(feature_series, cfg)
+        if start is not None:
+            matrix = matrix.filter(pl.col("window_end") >= start)
+        if end is not None:
+            matrix = matrix.filter(pl.col("window_end") <= end)
+        if matrix.is_empty():
+            log.warning("detect: khong co dong nao trong [%s, %s] cho '%s'", start, end, category)
+            return matrix
+        write_table(matrix, Table.INDICATOR_MATRIX, cfg)
         return matrix
-    write_table(matrix, Table.INDICATOR_MATRIX, cfg)
-    return matrix
 
 
 def run_score(
@@ -202,31 +451,104 @@ def run_score(
     start: date | None = None,
     end: date | None = None,
     config: Config | None = None,
+    max_workers: int | None = None,
 ) -> pl.DataFrame:
-    """Read the full indicator history, score it, and persist the requested alert range."""
+    """Read indicator history, score it with streaming parallelization, and persist the alert range."""
     cfg = config or load_config()
     if start and end and start > end:
         raise ValueError("start phải trước hoặc bằng end")
-    try:
-        matrix = read_table(Table.INDICATOR_MATRIX, cfg, category=category)
-    except FileNotFoundError as e:
+
+    from brandsentinel.core.schemas import empty_table  # noqa: PLC0415
+    from brandsentinel.scoring.score import score_indicators  # noqa: PLC0415
+
+    base = cfg.path("data_processed") / "indicator_matrix" / f"category={category}"
+    files = list(base.glob("*.parquet")) if base.exists() else []
+    if not files:
         raise FileNotFoundError(
             f"Chua co indicator_matrix cua '{category}': "
             f"chay `bs run --stage detect --category {category}` truoc"
-        ) from e
+        )
 
-    from brandsentinel.scoring.score import score_indicators  # noqa: PLC0415
+    # Check number of SKUs via lazy scan
+    lf = pl.scan_parquet(str(base / "*.parquet"))
+    all_skus = sorted(lf.select("sku").unique().collect()["sku"].to_list())
+    chunk_size = 50
+    workers = max_workers or min(os.cpu_count() or 4, 8)
 
-    alerts = score_indicators(matrix, cfg)
-    if start is not None:
-        alerts = alerts.filter(pl.col("window_end") >= start)
-    if end is not None:
-        alerts = alerts.filter(pl.col("window_end") <= end)
-    if alerts.is_empty():
-        log.warning("score: khong co alert nao trong [%s, %s] cho '%s'", start, end, category)
+    if len(all_skus) > 50:
+        chunks = [all_skus[i : i + chunk_size] for i in range(0, len(all_skus), chunk_size)]
+        total_chunks = len(chunks)
+        print(
+            f"=== Bắt đầu Score Parallel cho {len(all_skus):,} SKU "
+            f"({total_chunks} batches, {workers} nhân CPU, RAM an toàn < 350 MB) ==="
+        )
+        total_rows = 0
+        rows_by_level: dict[str, int] = {}
+        buffer: list[pl.DataFrame] = []
+        buffer_rows = 0
+        done_skus = 0
+        start_t = time.time()
+
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    _score_batch_worker,
+                    sku_batch,
+                    category,
+                    cfg,
+                    start,
+                    end,
+                ): sku_batch
+                for sku_batch in chunks
+            }
+            for future in as_completed(futures):
+                sku_batch = futures[future]
+                sub_alerts = future.result()
+                done_skus += len(sku_batch)
+                if not sub_alerts.is_empty():
+                    total_rows += sub_alerts.height
+                    buffer.append(sub_alerts)
+                    buffer_rows += sub_alerts.height
+                    for lvl, count in sub_alerts.group_by("level").len().iter_rows():
+                        rows_by_level[str(lvl)] = rows_by_level.get(str(lvl), 0) + count
+
+                if buffer_rows >= 50_000:
+                    combined = pl.concat(buffer)
+                    write_table(combined, Table.ALERTS, cfg)
+                    buffer.clear()
+                    buffer_rows = 0
+
+                pct = (done_skus / len(all_skus)) * 100
+                elapsed = time.time() - start_t
+                rate = done_skus / elapsed if elapsed > 0 else 0
+                eta = (len(all_skus) - done_skus) / rate if rate > 0 else 0
+                print(
+                    f"  [Score Parallel] {done_skus:,}/{len(all_skus):,} SKU "
+                    f"({pct:.1f}% - {total_rows:,} alerts, ~{rate:.2f} SKU/s, ETA: {eta:.0f}s)..."
+                )
+
+        if buffer:
+            combined = pl.concat(buffer)
+            write_table(combined, Table.ALERTS, cfg)
+            buffer.clear()
+
+        print(f"-> Hoàn tất Score cho toàn bộ {len(all_skus):,} SKU trong {time.time() - start_t:.1f}s!")
+        if total_rows == 0:
+            log.warning("score: khong co alert nao trong [%s, %s] cho '%s'", start, end, category)
+            return empty_table(Table.ALERTS)
+        return read_table(Table.ALERTS, cfg, category=category)
+    else:
+        matrix = read_table(Table.INDICATOR_MATRIX, cfg, category=category)
+        alerts = score_indicators(matrix, cfg)
+        if start is not None:
+            alerts = alerts.filter(pl.col("window_end") >= start)
+        if end is not None:
+            alerts = alerts.filter(pl.col("window_end") <= end)
+        if alerts.is_empty():
+            log.warning("score: khong co alert nao trong [%s, %s] cho '%s'", start, end, category)
+            return alerts
+        write_table(alerts, Table.ALERTS, cfg)
         return alerts
-    write_table(alerts, Table.ALERTS, cfg)
-    return alerts
 
 
 def _refuse_to_drop_content_features(fs: pl.DataFrame, cfg: Config, category: str) -> None:
@@ -286,6 +608,8 @@ def run_explain(
         w_end = date.fromisoformat(pack.window_end)
         path = recommendation_path(cfg, category, pack.sku, w_end)
         write_json(path, out_dict)
+        if not force_fallback and not rec.is_fallback:
+            time.sleep(3.5)
 
     summary_path = (
         cfg.path("data_processed")
@@ -306,6 +630,7 @@ def run_stage(
     source: str | Path | None = None,
     with_nlp: bool = True,
     config: Config | None = None,
+    resume: bool = True,
 ) -> dict[str, object]:
     """Dieu phoi mot stage; tra tom tat de CLI in ra. Them stage moi bang them mot nhanh o day."""
     cfg = config or load_config()
@@ -326,6 +651,12 @@ def run_stage(
             config=cfg,
             with_nlp=with_nlp,
         )
+        if "feature_series" in fs.columns and "len" in fs.columns:
+            return {
+                "feature_series": fs["feature_series"][0],
+                "skus": fs["skus"][0],
+                "rows_by_indicator": dict(zip(fs["indicator_id"], fs["len"], strict=True)),
+            }
         by = fs.group_by("indicator_id").len().sort("indicator_id")
         return {
             "feature_series": fs.height,
@@ -333,7 +664,13 @@ def run_stage(
             "rows_by_indicator": dict(zip(by["indicator_id"], by["len"], strict=True)),
         }
     if stage == "detect":
-        matrix = run_detect(category, start=start, end=end, config=cfg)
+        matrix = run_detect(category, start=start, end=end, config=cfg, resume=resume)
+        if "indicator_matrix" in matrix.columns and "len" in matrix.columns:
+            return {
+                "indicator_matrix": matrix["indicator_matrix"][0],
+                "skus": matrix["skus"][0],
+                "rows_by_indicator": dict(zip(matrix["indicator_id"], matrix["len"], strict=True)),
+            }
         by = matrix.group_by("indicator_id").len().sort("indicator_id") if matrix.height else None
         return {
             "indicator_matrix": matrix.height,

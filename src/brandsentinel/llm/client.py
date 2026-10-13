@@ -151,11 +151,15 @@ def call_llm_with_guardrails(
     if app_cfg.llm.cache_enabled:
         cached = read_cached_recommendation(app_cfg, canonical_dict)
         if cached is not None:
-            log.info("Cache hit cho SKU %s (hash: %s)", pack.sku, evidence_hash(canonical_dict))
-            try:
-                return RecommendationOutput.model_validate(cached)
-            except Exception as e:
-                log.warning("Cache data không hợp lệ cho SKU %s: %s. Chạy lại.", pack.sku, e)
+            has_key = bool(api_key or get_api_key_or_none(app_cfg.llm))
+            if cached.get("is_fallback") and not force_fallback and has_key and not is_budget_exceeded(app_cfg):
+                log.info("Bỏ qua cache fallback tạm thời cho SKU %s để gọi LLM thật.", pack.sku)
+            else:
+                log.info("Cache hit cho SKU %s (hash: %s)", pack.sku, evidence_hash(canonical_dict))
+                try:
+                    return RecommendationOutput.model_validate(cached)
+                except Exception as e:
+                    log.warning("Cache data không hợp lệ cho SKU %s: %s. Chạy lại.", pack.sku, e)
 
     # 2. Kiểm tra cờ ép buộc fallback (dùng cho offline testing)
     if force_fallback:
@@ -206,11 +210,17 @@ def call_llm_with_guardrails(
     client = http_client or httpx.Client(timeout=30.0)
     should_close_client = http_client is None
 
+    endpoint = (
+        f"{app_cfg.llm.base_url.rstrip('/')}/chat/completions"
+        if getattr(app_cfg.llm, "base_url", None)
+        else OPENAI_CHAT_URL
+    )
+
     try:
         for attempt in range(max_retries + 1):
             try:
                 response = client.post(
-                    OPENAI_CHAT_URL,
+                    endpoint,
                     headers={
                         "Authorization": f"Bearer {resolved_key}",
                         "Content-Type": "application/json",
@@ -263,6 +273,20 @@ def call_llm_with_guardrails(
             except Exception as e:
                 log.warning("Lỗi gọi OpenAI API ở lần thử %d: %s", attempt + 1, e)
                 last_errors = [str(e)]
+                if attempt < max_retries:
+                    import time
+                    wait_s = 2.0 * (attempt + 1)
+                    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                        retry_after_hdr = e.response.headers.get("retry-after")
+                        if retry_after_hdr:
+                            try:
+                                wait_s = float(retry_after_hdr) + 0.5
+                            except ValueError:
+                                wait_s = 4.0 * (attempt + 1)
+                        else:
+                            wait_s = 4.0 * (attempt + 1)
+                        log.info("Rate Limit 429: Tạm nghỉ %.1fs trước khi thử lại lần %d...", wait_s, attempt + 2)
+                    time.sleep(wait_s)
     finally:
         if should_close_client:
             client.close()

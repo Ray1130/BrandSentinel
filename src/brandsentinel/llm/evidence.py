@@ -286,10 +286,10 @@ def extract_high_alerts_evidence_packs(
     window_days = app_cfg.default.time.window_days
 
     # Đọc cấu hình max review và PII
-    max_reviews = 10
+    max_reviews = 5
     mask_pii_val = True
     if hasattr(app_cfg, "llm") and hasattr(app_cfg.llm, "max_top_reviews"):
-        max_reviews = getattr(app_cfg.llm, "max_top_reviews", 10)
+        max_reviews = getattr(app_cfg.llm, "max_top_reviews", 5)
         mask_pii_val = getattr(app_cfg.llm, "mask_pii", True)
 
     evidence_packs: list[EvidencePack] = []

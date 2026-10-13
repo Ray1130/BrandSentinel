@@ -88,4 +88,6 @@ def load_reviews(
 	clean = conform(Table.CLEAN_REVIEWS, clean)
 	if skus is not None:
 		clean = clean.filter(pl.col("sku").is_in(skus))
+	clean = clean.unique(subset=["review_id"], keep="first", maintain_order=True)
 	return validate_clean_reviews(clean)
+
