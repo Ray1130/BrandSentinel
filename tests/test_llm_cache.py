@@ -37,5 +37,5 @@ def test_recommendation_is_cached_by_evidence_hash(cfg, tmp_path):
 def test_openai_key_is_required_only_when_requested(cfg, monkeypatch):
     monkeypatch.delenv(cfg.llm.api_key_env, raising=False)
 
-    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+    with pytest.raises(RuntimeError, match=cfg.llm.api_key_env):
         require_api_key(cfg.llm)

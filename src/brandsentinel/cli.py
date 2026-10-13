@@ -75,6 +75,13 @@ def run(
             help="features: bỏ NLP, chỉ I1-I6 (không cần extra)",
         ),
     ] = False,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume/--no-resume",
+            help="Tự động tiếp tục từ các SKU đã hoàn thành (mặc định True)",
+        ),
+    ] = True,
 ) -> None:
     """Chạy một stage của pipeline."""
 
@@ -91,6 +98,7 @@ def run(
             source=source,
             with_nlp=not no_nlp,
             config=load_config(),
+            resume=resume,
         )
 
     except FileNotFoundError as e:

@@ -86,6 +86,19 @@ def parse_and_validate_recommendation(
     if "risk_score" not in data or data["risk_score"] is None:
         data["risk_score"] = evidence_pack.risk_score
 
+    # 2b. Auto-heal: Tự động bổ sung phòng ban nếu LLM lỡ thiếu 1 trong 4 phòng ban
+    if isinstance(data.get("actions"), dict):
+        actions_dict = data["actions"]
+        default_dept_actions = {
+            "QA_KyThuat": [{"priority": "HIGH", "action": "Kiểm định chất lượng các linh kiện và lô hàng liên quan", "timeline": "24h"}],
+            "VanHanh": [{"priority": "HIGH", "action": "Rà soát quy trình đóng gói và kiểm soát luồng giao nhận kho bãi", "timeline": "24h"}],
+            "CSKH": [{"priority": "HIGH", "action": "Chủ động hỗ trợ đổi trả hoặc hoàn tiền giải quyết khiếu nại của khách hàng", "timeline": "12h"}],
+            "TruyenThong": [{"priority": "MEDIUM", "action": "Theo dõi dư luận mạng xã hội và chuẩn bị thông điệp phản hồi minh bạch", "timeline": "24h"}],
+        }
+        for dept, fallback_act in default_dept_actions.items():
+            if dept not in actions_dict or not actions_dict[dept]:
+                actions_dict[dept] = fallback_act
+
     # 3. Validate Pydantic Schema
     try:
         recommendation = RecommendationOutput.model_validate(data)

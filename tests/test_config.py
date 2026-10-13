@@ -29,8 +29,8 @@ def test_load_real_configs():
     assert cfg.indicators.flag_ids == ["I10", "I11"]
     assert cfg.indicators.ids_in_group("content") == ["I7", "I8", "I9"]
     assert cfg.default.time.window_days == 7
-    assert cfg.llm.provider == "openai"
-    assert cfg.llm.api_key_env == "OPENAI_API_KEY"
+    assert cfg.llm.provider in {"openai", "groq"}
+    assert cfg.llm.api_key_env in {"OPENAI_API_KEY", "GROQ_API_KEY"}
     assert cfg.llm.monthly_budget_usd == 5.0
     assert cfg.thresholds.calibration.fallback.tau1 < cfg.thresholds.calibration.fallback.tau2
     assert cfg.path("data_raw") == REPO / "data" / "raw"

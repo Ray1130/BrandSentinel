@@ -29,8 +29,9 @@ class _BaseSchema(BaseModel):
 class LLMConfig(_BaseSchema):
     """Cấu hình hoàn chỉnh cho module LLM, tương thích trực tiếp với configs/llm.yaml."""
 
-    provider: Literal["openai", "mock"] = "openai"
+    provider: Literal["openai", "groq", "mock", "custom"] = "openai"
     model: str = "gpt-4o-mini"
+    base_url: str = "https://api.openai.com/v1"
     api_key_env: str = "OPENAI_API_KEY"
     monthly_budget_usd: float = Field(default=5.0, gt=0.0, description="Hạn mức ngân sách tối đa (USD)")
     cache_enabled: bool = True
@@ -39,7 +40,7 @@ class LLMConfig(_BaseSchema):
     max_tokens: int = Field(default=1500, ge=100, le=4096)
     timeout_seconds: int = Field(default=30, ge=5, le=120)
     max_retries: int = Field(default=2, ge=0, le=5)
-    max_top_reviews: int = Field(default=10, ge=1, le=50)
+    max_top_reviews: int = Field(default=5, ge=1, le=50)
     mask_pii: bool = True
 
     # Chi phí token ước tính (gpt-4o-mini: $0.15/1M input, $0.60/1M output)

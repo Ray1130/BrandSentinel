@@ -199,12 +199,14 @@ class LlmRefCfg(_Cfg):
 
 
 class LlmConfig(_Cfg):
-    provider: Literal["openai"]
+    provider: Literal["openai", "groq", "custom"] = "openai"
     model: str = Field(min_length=1)
+    base_url: str = "https://api.openai.com/v1"
     api_key_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     monthly_budget_usd: float = Field(gt=0)
     cache_enabled: bool
     cache_key: Literal["sha256_canonical_evidence"]
+    max_top_reviews: int = Field(default=5, ge=1, le=50)
 
 
 class LoggingCfg(_Cfg):

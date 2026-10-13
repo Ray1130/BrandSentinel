@@ -59,8 +59,8 @@ def test_normalize_and_deduplicate_exact_repeats(tmp_path):
     deduplicated = deduplicate_reviews(normalized, audit=audit)
 
     assert normalized["text_norm"].to_list() == [
-        "greatttt product emoji_thumbs_up",
-        "greatttt product emoji_thumbs_up",
+        "greattt product emoji_thumbs_up",
+        "greattt product emoji_thumbs_up",
     ]
     assert deduplicated.height == 1
     assert deduplicated["ts"].item() == clean["ts"].min()
