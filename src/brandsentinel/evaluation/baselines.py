@@ -17,15 +17,21 @@ def evaluate_baselines(
 	*,
 	lookback_days: int = 90,
 ) -> dict[str, dict[str, Any]]:
-	"""Compare MEDIUM-or-HIGH alerts with a stricter HIGH-only policy.
+	"""Compare severity policies and signal-family baselines against recall events.
 
-	These are alert-policy comparisons, not precision baselines: ``recall_labels``
-	contains positive events only and the alert table omits non-alert windows.
+	Signal-family baselines filter emitted alerts by their triggered indicators. They
+	are not independently re-scored detectors; ``recall_labels`` contains positive
+	events only and the alert table omits non-alert windows.
 	"""
 	validate(Table.ALERTS, alerts)
 	validate(Table.RECALL_LABELS, recall_labels)
 
-	return {
+	baseline_indicators = {
+		"rating_rolling": ["I3", "I4", "I5", "I6"],
+		"volume_only": ["I1", "I2"],
+		"keyword_only": ["I7", "I8"],
+	}
+	results = {
 		"medium_or_high": evaluate_alerts(alerts, recall_labels, lookback_days=lookback_days),
 		"high_only": evaluate_alerts(
 			alerts.filter(pl.col("level") == "HIGH"),
@@ -33,3 +39,11 @@ def evaluate_baselines(
 			lookback_days=lookback_days,
 		),
 	}
+	for name, indicators in baseline_indicators.items():
+		baseline_alerts = alerts.filter(
+			pl.col("triggered_ids").list.eval(pl.element().is_in(indicators)).list.any()
+		)
+		results[name] = evaluate_alerts(
+			baseline_alerts, recall_labels, lookback_days=lookback_days
+		)
+	return results

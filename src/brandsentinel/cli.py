@@ -22,7 +22,7 @@ class Stage(StrEnum):
     evaluate = "evaluate"
 
 
-IMPLEMENTED = {"preprocess", "features", "detect", "score", "explain"}
+IMPLEMENTED = {"preprocess", "features", "detect", "score", "explain", "evaluate"}
 
 NLP_MODULES = {
     "torch",
@@ -116,4 +116,7 @@ def run(
         raise
 
     for key, value in summary.items():
-        typer.echo(f"{key}: {value}")
+        if key == "comparison_table":
+            typer.echo(value)
+        else:
+            typer.echo(f"{key}: {value}")
