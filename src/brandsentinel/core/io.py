@@ -94,9 +94,10 @@ def read_table(
     start: date | None = None,
     end: date | None = None,
     skus: list[str] | None = None,
+    review_ids: list[str] | None = None,
     check: bool = False,
 ) -> pl.DataFrame:
-    """Đọc bảng, lọc theo category / khoảng ngày [start, end] / danh sách SKU."""
+    """Đọc bảng, lọc theo category / khoảng ngày [start, end] / SKU hoặc review."""
     base = table_dir(cfg, table)
     pattern = f"category={_safe(category)}" if category else "category=*"
     files = sorted(base.glob(f"{pattern}/*.parquet"))
@@ -109,7 +110,13 @@ def read_table(
     if end is not None:
         lf = lf.filter(pl.col(date_col) <= end)
     if skus is not None:
+        if "sku" not in KEYS[table]:
+            raise ValueError(f"{table.value} không hỗ trợ lọc theo SKU")
         lf = lf.filter(pl.col("sku").is_in(skus))
+    if review_ids is not None:
+        if table not in (Table.CLEAN_REVIEWS, Table.NLP_FEATURES):
+            raise ValueError(f"{table.value} không hỗ trợ lọc theo review_id")
+        lf = lf.filter(pl.col("review_id").is_in(review_ids))
     df = lf.sort(KEYS[table]).collect()
     return validate(table, df) if check else df
 
