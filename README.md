@@ -133,6 +133,7 @@ uv run poe check           # lint + format-check + test
 | Việc | Lệnh |
 |---|---|
 | Test / lint / format | `uv run poe test` / `uv run poe lint` / `uv run poe fmt` |
+| Dashboard offline (đọc Parquet, không cần API) | `uv run --extra serving streamlit run src/brandsentinel/serving/dashboard.py` |
 | Chạy một giai đoạn | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
 | Phát hiện I1–I11 và ghi `indicator_matrix` | `uv run bs run --stage detect --category Baby_Products` (cần chạy `features` trước) |
 | Chấm điểm từ `indicator_matrix` và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy `detect` trước) |

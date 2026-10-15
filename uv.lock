@@ -126,6 +126,7 @@ nlp = [
 ]
 serving = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "streamlit" },
     { name = "uvicorn" },
 ]
@@ -144,6 +145,7 @@ requires-dist = [
     { name = "bertopic", marker = "extra == 'nlp'", specifier = ">=0.16" },
     { name = "fastapi", marker = "extra == 'serving'", specifier = ">=0.110" },
     { name = "httpx", marker = "extra == 'llm'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'serving'", specifier = ">=0.27" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandera", extras = ["polars"], specifier = ">=0.20" },
     { name = "polars", specifier = ">=1.0" },

@@ -31,7 +31,7 @@ nlp = [
   "bertopic>=0.16",
 ]
 llm = ["httpx>=0.27"]
-serving = ["fastapi>=0.110", "uvicorn>=0.29", "streamlit>=1.35"]
+serving = ["fastapi>=0.110", "uvicorn>=0.29", "streamlit>=1.35", "httpx>=0.27"]
 
 [project.scripts]
 bs = "brandsentinel.cli:app"
