@@ -85,6 +85,9 @@ def test_baselines_compare_all_severities_with_high_only():
 	assert results["high_only"]["event_recall"] == 0.5
 	assert results["high_only"]["mean_lead_time_days"] == 2.0
 	assert results["high_only"]["alerts_in_window"] == 1
+	assert results["keyword_only"]["alerts_in_window"] == 2
+	assert results["rating_rolling"]["alerts_in_window"] == 0
+	assert results["volume_only"]["alerts_in_window"] == 0
 
 
 def test_empty_recall_labels_have_undefined_recall():

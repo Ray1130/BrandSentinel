@@ -7,7 +7,7 @@ import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -621,6 +621,68 @@ def run_explain(
     return recs
 
 
+def run_evaluate(
+    category: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    config: Config | None = None,
+    lookback_days: int = 90,
+) -> tuple[pl.DataFrame, Path]:
+    """Compare saved alerts with exact-match recall events and write a CSV report."""
+    cfg = config or load_config()
+    try:
+        alerts = read_table(Table.ALERTS, cfg, category=category, check=True)
+        labels = read_table(Table.RECALL_LABELS, cfg, category=category, check=True)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Chưa có alerts hoặc recall_labels của '{category}': "
+            "cần dữ liệu alerts đã chấm điểm và nhãn thu hồi exact_asin trước khi evaluate"
+        ) from e
+
+    if start is not None:
+        labels = labels.filter(pl.col("recall_date") >= start)
+        alerts = alerts.filter(pl.col("window_end") >= start - timedelta(days=lookback_days))
+    if end is not None:
+        labels = labels.filter(pl.col("recall_date") <= end)
+    if end is not None:
+        alerts = alerts.filter(pl.col("window_end") <= end)
+
+    from brandsentinel.evaluation.baselines import evaluate_baselines  # noqa: PLC0415
+
+    metrics = evaluate_baselines(alerts, labels, lookback_days=lookback_days)
+    names = {
+        "medium_or_high": "BrandSentinel (MEDIUM+)",
+        "rating_rolling": "Rating rolling",
+        "volume_only": "Volume only",
+        "keyword_only": "Keyword only",
+    }
+    comparison = pl.DataFrame(
+        [
+            {
+                "baseline": names[key],
+                "recall_events": values["recall_events"],
+                "detected_events": values["detected_events"],
+                "missed_events": values["missed_events"],
+                "event_recall_pct": (
+                    round(values["event_recall"] * 100, 2)
+                    if values["event_recall"] is not None
+                    else None
+                ),
+                "mean_lead_time_days": values["mean_lead_time_days"],
+                "median_lead_time_days": values["median_lead_time_days"],
+                "alerts_in_window": values["alerts_in_window"],
+            }
+            for key, values in metrics.items()
+            if key in names
+        ]
+    )
+    report_path = cfg.path("data_processed") / "evaluation" / f"category={category}" / "comparison.csv"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    comparison.write_csv(report_path)
+    return comparison, report_path
+
+
 def run_stage(
     stage: str,
     category: str,
@@ -698,4 +760,9 @@ def run_stage(
             "skus": len({r["sku"] for r in recs}),
             "fallback_count": sum(1 for r in recs if r.get("is_fallback")),
         }
+    if stage == "evaluate":
+        comparison, report_path = run_evaluate(
+            category, start=start, end=end, config=cfg
+        )
+        return {"comparison_table": comparison, "report_csv": str(report_path)}
     raise NotImplementedError(stage)

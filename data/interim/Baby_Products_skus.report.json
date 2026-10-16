@@ -1,0 +1,12 @@
+{
+  "category": "Baby_Products",
+  "source_rows": 6028884,
+  "selected_skus": 241,
+  "exported_reviews": 825288,
+  "missing_or_null_fields": {},
+  "thresholds": {
+    "min_history_days": 180,
+    "min_total_reviews": 200,
+    "min_median_weekly_reviews": 5.0
+  }
+}

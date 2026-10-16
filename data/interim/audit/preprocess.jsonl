@@ -1,0 +1,4 @@
+{"ts": "2026-10-15T15:41:17+00:00", "stage": "preprocess", "step": "normalize", "n_in": 817542, "n_out": 817542, "removed": 0}
+{"ts": "2026-10-15T15:41:17+00:00", "stage": "preprocess", "step": "deduplicate_exact", "n_in": 817542, "n_out": 817257, "removed": 285, "key": ["sku", "user_id", "text_norm"]}
+{"ts": "2026-10-15T15:41:17+00:00", "stage": "preprocess", "step": "flag_spam", "n_in": 817257, "n_out": 817257, "removed": 0, "flagged": 43825, "too_short_flagged": 43544, "user_day_burst_flagged": 294, "repeated_template_flagged": 36, "same_second_burst_flagged": 0}
+{"ts": "2026-10-15T15:41:17+00:00", "stage": "preprocess", "step": "select_eligible_skus", "n_in": 1506250, "n_out": 1481250, "removed": 25000, "skus_in": 241, "skus_out": 237, "excluded_skus": ["B000IDSLOG", "B01M6C0KET", "B07B2994DB", "B0BXDL9RWL"], "thresholds": {"min_history_days": 180, "min_total_reviews": 200, "min_median_weekly_reviews": 5.0}}
