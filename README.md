@@ -80,8 +80,9 @@ phân phối nền của từng ngành hàng.
   bật/tắt, trọng số và tham số nằm ở `configs/indicators.yaml`.
 - **Không hard-code tham số:** mọi ngưỡng, cửa sổ, từ điển đều ở `configs/` (YAML, được kiểm bằng Pydantic).
   Các giá trị hiện tại là cấu hình khởi tạo, được hiệu chỉnh trên dữ liệu baseline.
-- **LLM chỉ diễn giải:** chỉ nhận "gói bằng chứng", trả JSON theo schema, phải trích dẫn review có thật
-  và không được tự đổi mức rủi ro.
+- **LLM chỉ diễn giải:** chỉ nhận "gói bằng chứng" từ cảnh báo HIGH, trả JSON theo schema, phải trích
+  dẫn review có thật và không được tự đổi mức rủi ro. Kết quả được cache theo SHA-256 của gói bằng
+  chứng chuẩn hóa; fallback theo luật vẫn hoạt động khi không có API key hoặc khi chạm giới hạn chi phí.
 
 ```
 src/brandsentinel/
@@ -90,7 +91,7 @@ src/brandsentinel/
 ├── features/        # cửa sổ, volume, rating, độ tin cậy; nlp/ (sentiment, từ điển rủi ro, khía cạnh)
 ├── detection/       # baseline, STL, xu hướng, PELT, kích hoạt; indicators/ (I1–I11)
 ├── scoring/         # trọng số, nhóm tín hiệu, RiskScore, ngưỡng, luật phân mức, trạng thái
-├── llm/             # gói bằng chứng, prompt, kiểm tra đầu ra, dự phòng
+├── llm/             # gói bằng chứng, prompt, kiểm tra đầu ra, fallback, cache SHA-256
 ├── evaluation/      # ghép với dữ liệu thu hồi, chỉ số, baseline so sánh, dữ liệu tổng hợp
 ├── serving/         # API, dashboard, thông báo
 ├── testing/         # dữ liệu mock đúng hợp đồng cho cả 7 bảng
@@ -134,11 +135,44 @@ uv run poe check           # lint + format-check + test
 |---|---|
 | Test / lint / format | `uv run poe test` / `uv run poe lint` / `uv run poe fmt` |
 | Dashboard offline (đọc Parquet, không cần API) | `uv run --extra serving streamlit run src/brandsentinel/serving/dashboard.py` |
-| Chạy một giai đoạn | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
+| API | `uv run --extra serving uvicorn brandsentinel.serving.api:app --reload` |
+| Stage tiền xử lý | `uv run bs run --stage preprocess --category Baby_Products --start 2023-01-01 --end 2023-03-31` |
+| Stage đặc trưng | `uv run bs run --stage features --category Baby_Products` (mặc định dùng NLP; cần extra `nlp`) |
+| Đặc trưng không NLP | `uv run bs run --stage features --category Baby_Products --no-nlp` (chỉ I1–I6) |
 | Phát hiện I1–I11 và ghi `indicator_matrix` | `uv run bs run --stage detect --category Baby_Products` (cần chạy `features` trước) |
-| Chấm điểm từ `indicator_matrix` và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy `detect` trước) |
-| Hiệu chỉnh ngưỡng và kiểm tra 4 khủng hoảng synthetic | `uv run python scripts/calibrate_thresholds.py --category Baby_Products` (cần có `feature_series` đã lưu; chỉ in đề xuất, không sửa YAML) |
+| Chấm điểm và ghi `alerts` | `uv run bs run --stage score --category Baby_Products` (cần chạy `detect` trước) |
+| Sinh khuyến nghị cho cảnh báo HIGH | `uv run bs run --stage explain --category Baby_Products` (cần `score` và `preprocess` trước; dùng LLM nếu có key, nếu không thì fallback) |
+| Đánh giá với nhãn thu hồi | `uv run bs run --stage evaluate --category Baby_Products` (cần `alerts` và `recall_labels`) |
+| Hiệu chỉnh ngưỡng trên dữ liệu synthetic | `uv run python scripts/calibrate_thresholds.py --category Baby_Products` (cần có `feature_series`; chỉ in đề xuất, không sửa YAML) |
 | Dữ liệu mock | `from brandsentinel.testing.mock_data import make_all` |
+
+Các stage chính chạy theo thứ tự `preprocess` → `features` → `detect` → `score`. `explain` tạo
+khuyến nghị cho các cảnh báo HIGH; `evaluate` so sánh cảnh báo với nhãn thu hồi exact-ASIN và ghi
+báo cáo CSV. CLI hỗ trợ `--start` / `--end` theo định dạng `YYYY-MM-DD`; với `preprocess`, có thể
+chỉ định file đầu vào khác bằng `--source <path>`. Stage `detect` tự tiếp tục các SKU đã hoàn tất
+theo mặc định; dùng `--no-resume` để tắt.
+
+### LLM và API
+
+Mặc định [configs/llm.yaml](configs/llm.yaml) cấu hình Groq tương thích API chat completions và đọc
+khóa từ biến môi trường `GROQ_API_KEY`. Đặt khóa trong môi trường trước khi chạy stage `explain`
+nếu muốn gọi LLM thật; không lưu khóa trong file cấu hình hoặc repository. Khi không có khóa, vượt
+giới hạn chi phí hoặc gặp lỗi gọi/kiểm định đầu ra, hệ thống trả khuyến nghị fallback theo luật.
+
+Khi bật cache (`cache_enabled: true`), gói bằng chứng được tuần tự hóa ổn định (không phụ thuộc thứ
+tự key) rồi băm SHA-256. Kết quả được lưu tại
+`data/processed/recommendations/cache/<evidence-hash>.json`; cùng bằng chứng thường dùng lại kết quả
+đã lưu. Riêng fallback đã cache sẽ được bỏ qua để thử gọi LLM thật nếu API key có sẵn và ngân sách
+còn. Các khuyến nghị của stage `explain` cũng được ghi theo SKU/ngày và tổng hợp trong
+`data/processed/recommendations/category=<category>/recommendations.json`.
+
+API FastAPI được khởi chạy bằng lệnh trên, mặc định phục vụ tại `http://127.0.0.1:8000`:
+
+- `GET /api/v1/health` — trạng thái dịch vụ.
+- `GET /api/v1/alerts?category=Baby_Products&level=HIGH&limit=50` — truy vấn cảnh báo đã lưu.
+- `GET /api/v1/recommendations?category=Baby_Products` — đọc khuyến nghị đã sinh.
+- `POST /api/v1/analyze-risk` — nhận `EvidencePack` để phân tích; hỗ trợ `force_fallback=true`.
+- Tài liệu tương tác tại `/docs`.
 
 Báo cáo calibration dùng phân vị/floor/fallback đã cấu hình và đánh giá các ca volume, rating,
 safety-keyword, review bombing qua detector/scorer thật. Mặc định script sweep `k/m/n`, ngưỡng
