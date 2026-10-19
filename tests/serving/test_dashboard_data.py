@@ -42,6 +42,55 @@ def test_priority_table_uses_level_score_and_i8_as_tie_breaker(cfg):
     assert dashboard.snapshot(alerts, date(2024, 1, 1))["sku"].to_list() == ["C", "A", "B"]
 
 
+def test_overview_metrics_excludes_spam_and_compares_negative_sentiment_windows():
+    clean = pl.DataFrame(
+        {
+            "sku": ["A", "A", "A", "A", "B"],
+            "review_id": ["a1", "a2", "a0", "spam", "b1"],
+            "date": [
+                date(2024, 1, 14),
+                date(2024, 1, 14),
+                date(2024, 1, 7),
+                date(2024, 1, 14),
+                date(2024, 1, 14),
+            ],
+            "rating": [1, 5, 2, 1, 3],
+            "is_spam": [False, False, False, True, False],
+        }
+    )
+    nlp = pl.DataFrame(
+        {
+            "review_id": ["a1", "a2", "a0", "spam", "b1"],
+            "sentiment_score": [-0.8, 0.6, -0.5, -1.0, -0.2],
+        }
+    )
+    alerts = pl.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "category": ["test", "test"],
+            "window_end": [date(2024, 1, 14), date(2024, 1, 14)],
+            "score": [0.8, 0.4],
+            "level": ["HIGH", "MEDIUM"],
+            "groups_active": [["rating"], ["content"]],
+            "persist": [2, 1],
+            "verify_flag": [False, False],
+            "triggered_ids": [["I4"], ["I9"]],
+        }
+    )
+
+    rows, metrics = dashboard.overview_metrics(clean, nlp, alerts, date(2024, 1, 14))
+
+    assert metrics["valid_reviews"] == 3
+    assert metrics["high_risk"] == 1
+    assert metrics["medium_risk"] == 1
+    assert metrics["negative_sentiment_pct"] == pytest.approx(2 / 3)
+    assert rows[0]["sku"] == "A"
+    assert rows[0]["avg_rating"] == pytest.approx(3)
+    assert rows[0]["low_rating_pct"] == pytest.approx(0.5)
+    assert rows[0]["negative_trend"] == pytest.approx(-0.5)
+    assert rows[1]["negative_trend"] is None
+
+
 def test_indicator_contributions_match_score_and_exclude_future(cfg, mock_tables):
     alerts = mock_tables[Table.ALERTS]
     assert not alerts.is_empty()

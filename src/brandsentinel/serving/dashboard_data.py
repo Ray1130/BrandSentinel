@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Any
@@ -13,7 +14,7 @@ from brandsentinel.core.io import read_json, read_table
 from brandsentinel.core.schemas import empty_table
 from brandsentinel.core.types import INDICATOR_IDS, Table
 from brandsentinel.llm.evidence import build_evidence_pack
-from brandsentinel.llm.schemas import RecommendationOutput
+from brandsentinel.llm.schemas import EvidencePack, RecommendationOutput
 from brandsentinel.scoring.weights import calculate_weights
 
 _GROUPS = ("volume", "rating", "content")
@@ -210,6 +211,156 @@ def kpis(alerts: pl.DataFrame, as_of: date) -> dict[str, int | None]:
         "scored_skus": None,
         "insufficient_data_skus": None,
     }
+
+
+def overview_metrics(
+    clean_reviews: pl.DataFrame,
+    nlp_features: pl.DataFrame,
+    alerts: pl.DataFrame,
+    as_of: date,
+) -> tuple[list[dict[str, Any]], dict[str, int | float | None]]:
+    """Build a product snapshot and category KPIs from the latest 7/14 review days."""
+    current_start = as_of - timedelta(days=6)
+    previous_start = as_of - timedelta(days=13)
+    valid = (
+        clean_reviews.filter(
+            (pl.col("date") >= previous_start)
+            & (pl.col("date") <= as_of)
+            & ~pl.col("is_spam").fill_null(False)
+        )
+        if not clean_reviews.is_empty()
+        else clean_reviews
+    )
+    sentiment_by_id: dict[str, float | None] = {}
+    if not nlp_features.is_empty():
+        sentiment_by_id = dict(nlp_features.select("review_id", "sentiment_score").iter_rows())
+
+    weekly: dict[str, dict[str, dict[str, float]]] = defaultdict(
+        lambda: {
+            "current": defaultdict(float),
+            "previous": defaultdict(float),
+        }
+    )
+    for review in valid.to_dicts():
+        sku = str(review["sku"])
+        period = "current" if review["date"] >= current_start else "previous"
+        bucket = weekly[sku][period]
+        bucket["count"] += 1
+        bucket["rating_total"] += float(review["rating"])
+        bucket["low_rating_count"] += int(review["rating"] <= 2)
+        sentiment = sentiment_by_id.get(str(review["review_id"]))
+        if sentiment is not None:
+            bucket["sentiment_count"] += 1
+            bucket["negative_sentiment_count"] += int(sentiment < 0)
+
+    current_alerts = snapshot(alerts, as_of)
+    alert_by_sku = {str(row["sku"]): row for row in current_alerts.to_dicts()}
+    all_skus = set(weekly) | set(alert_by_sku)
+    rows: list[dict[str, Any]] = []
+    rank = {"HIGH": 2, "MEDIUM": 1}
+
+    def sentiment_rate(bucket: dict[str, float]) -> float | None:
+        denominator = bucket["sentiment_count"]
+        return bucket["negative_sentiment_count"] / denominator if denominator else None
+
+    for sku in all_skus:
+        current = weekly[sku]["current"]
+        previous = weekly[sku]["previous"]
+        current_sentiment = sentiment_rate(current)
+        previous_sentiment = sentiment_rate(previous)
+        if current_sentiment is None or previous_sentiment is None:
+            trend = None
+        else:
+            trend = current_sentiment - previous_sentiment
+
+        alert = alert_by_sku.get(sku)
+        rows.append(
+            {
+                "sku": sku,
+                "avg_rating": (
+                    current["rating_total"] / current["count"] if current["count"] else None
+                ),
+                "low_rating_pct": (
+                    current["low_rating_count"] / current["count"] if current["count"] else None
+                ),
+                "negative_sentiment_pct": current_sentiment,
+                "negative_trend": trend,
+                "level": alert["level"] if alert else None,
+                "score": alert["score"] if alert else None,
+                "window_end": alert["window_end"] if alert else None,
+                "alert": alert,
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            rank.get(str(row["level"]), 0),
+            float(row["score"] or 0.0),
+            row["sku"],
+        ),
+        reverse=True,
+    )
+    current_reviews = sum(bucket["current"]["count"] for bucket in weekly.values())
+    current_sentiment_count = sum(
+        bucket["current"]["sentiment_count"] for bucket in weekly.values()
+    )
+    total_negative_sentiment = sum(
+        bucket["current"]["negative_sentiment_count"] for bucket in weekly.values()
+    )
+    metrics = {
+        "valid_reviews": int(current_reviews),
+        "high_risk": current_alerts.filter(pl.col("level") == "HIGH")["sku"].n_unique()
+        if not current_alerts.is_empty()
+        else 0,
+        "medium_risk": current_alerts.filter(pl.col("level") == "MEDIUM")["sku"].n_unique()
+        if not current_alerts.is_empty()
+        else 0,
+        "negative_sentiment_pct": (
+            total_negative_sentiment / current_sentiment_count if current_sentiment_count else None
+        ),
+        "window_start": current_start,
+    }
+    return rows, metrics
+
+
+def build_api_evidence_pack(config: Config, alert_record: dict[str, Any]) -> EvidencePack:
+    """Build the HIGH-risk evidence payload used by the dashboard's API action."""
+    window_end = alert_record["window_end"]
+    if isinstance(window_end, str):
+        window_end = date.fromisoformat(window_end)
+    window_start = window_end - timedelta(days=config.default.time.window_days - 1)
+    category = str(alert_record["category"])
+    sku = str(alert_record["sku"])
+    clean = read_category_table(
+        Table.CLEAN_REVIEWS,
+        config,
+        category,
+        start=window_start,
+        end=window_end,
+        skus=[sku],
+    )
+    try:
+        nlp = read_category_table(
+            Table.NLP_FEATURES,
+            config,
+            category,
+            start=window_start,
+            end=window_end,
+            review_ids=clean["review_id"].to_list(),
+        )
+    except FileNotFoundError:
+        nlp = pl.DataFrame()
+    pack = build_evidence_pack(
+        alert_record,
+        clean,
+        nlp_features_df=nlp,
+        window_days=config.default.time.window_days,
+        max_reviews=config.llm.max_top_reviews,
+        mask_pii_enabled=getattr(config.llm, "mask_pii", True),
+    )
+    if not pack.reviews:
+        raise ValueError(f"Không có review làm bằng chứng cho SKU {sku} tại {window_end}.")
+    return pack
 
 
 def indicator_breakdown(

@@ -8,11 +8,13 @@ from html import escape
 from typing import Any
 
 import altair as alt
+import httpx
 import polars as pl
 import streamlit as st
 
 from brandsentinel.core.config import get_config
 from brandsentinel.core.types import Table
+from brandsentinel.llm.schemas import RecommendationOutput
 from brandsentinel.scoring.thresholds import thresholds_for_category
 from brandsentinel.serving import dashboard_data as data
 
@@ -588,112 +590,201 @@ def _system_tab(cfg: Any, category: str, alerts: pl.DataFrame, latest_date: date
 
 def main() -> None:
     st.set_page_config(page_title="BrandSentinel · Dashboard", layout="wide")
-    st.title("BrandSentinel · Ưu tiên kiểm tra sản phẩm")
-    st.caption("Điểm dùng để xếp hạng ưu tiên kiểm tra, không phải xác suất khủng hoảng.")
+    st.title("Tổng quan rủi ro sản phẩm")
     cfg = get_config()
     categories = data.available_categories(cfg)
     default_categories = cfg.default.data.categories.dev + cfg.default.data.categories.holdout
     category_options = categories or default_categories
+    if not category_options:
+        st.info("Chưa có category trong cấu hình hoặc dữ liệu.")
+        return
+
     query_category = st.query_params.get("category")
     initial_category = query_category if query_category in category_options else category_options[0]
-
-    query_sku = st.query_params.get("sku")
-    if query_sku:
-        st.session_state.setdefault("dashboard_selected_sku", query_sku)
-    with st.sidebar:
-        st.header("Bộ lọc")
+    controls = st.columns([2, 3, 1])
+    with controls[0]:
         category = st.selectbox(
             "Category", category_options, index=category_options.index(initial_category)
         )
-        alerts = _message_block("Không đọc được alerts", lambda: _alert_history(category, cfg))
-        if alerts is None:
-            return
-        try:
-            first_date, latest_date = _date_bounds(category, cfg, alerts)
-        except FileNotFoundError:
-            first_date = latest_date = date.today()
-        as_of_default = min(
-            max(_get_date(st.query_params.get("as_of"), latest_date), first_date), latest_date
+    with controls[2]:
+        api_url = (
+            st.text_input(
+                "API URL",
+                value=st.session_state.get("dashboard_api_url", "http://127.0.0.1:8000"),
+                placeholder="http://127.0.0.1:8000",
+                help="Địa chỉ BrandSentinel API dùng để tạo đề xuất.",
+            )
+            .strip()
+            .rstrip("/")
         )
-        as_of = st.date_input(
-            "Ngày xét",
-            value=as_of_default,
-            min_value=first_date,
-            max_value=latest_date,
-        )
-        level_filter = st.multiselect("Mức", ["HIGH", "MEDIUM", "LOW"], default=["HIGH", "MEDIUM"])
-        group_filter = st.multiselect(
-            "Nhóm tín hiệu", list(GROUP_LABELS), format_func=lambda key: GROUP_LABELS[key]
-        )
-        verify_only = st.checkbox("Chỉ SKU có cờ xác minh")
-        sku_search = st.text_input("Tìm SKU", value="")
-        limit = st.number_input("Số dòng tối đa", min_value=1, max_value=2000, value=200)
+        st.session_state.dashboard_api_url = api_url
 
-    if alerts.is_empty():
-        st.info(
-            "Chưa có dữ liệu cho category này. Chạy pipeline trước, ví dụ: "
-            f"`bs run --stage score --category {category}`."
+    alerts = _alert_history(category, cfg)
+    try:
+        daily = data.read_category_table(Table.DAILY_AGG, cfg, category)
+        latest_date = daily["date"].max() if not daily.is_empty() else date.today()
+    except FileNotFoundError:
+        latest_date = alerts["window_end"].max() if not alerts.is_empty() else date.today()
+
+    review_start = max(date.min, latest_date - timedelta(days=13))
+    try:
+        clean = data.read_category_table(
+            Table.CLEAN_REVIEWS, cfg, category, start=review_start, end=latest_date
         )
-    show_verification = data.has_validation_reports(cfg, category)
-    tab_labels = ["Tổng quan", "Chi tiết SKU"]
-    if show_verification:
-        tab_labels.append("Kiểm chứng")
-    tab_labels.append("Về hệ thống")
-    tabs = st.tabs(tab_labels)
-    with tabs[0]:
-        overview_result = _message_block(
-            "Tổng quan bị lỗi",
-            lambda: _overview(
-                category,
+    except FileNotFoundError:
+        clean = pl.DataFrame()
+    try:
+        nlp = (
+            data.read_category_table(
+                Table.NLP_FEATURES,
                 cfg,
-                alerts,
-                as_of,
-                int(limit),
-                level_filter,
-                group_filter,
-                verify_only,
-                sku_search,
-            ),
+                category,
+                start=review_start,
+                end=latest_date,
+                review_ids=clean["review_id"].to_list(),
+            )
+            if not clean.is_empty()
+            else pl.DataFrame()
         )
-        selected_sku, ranked = overview_result or (None, pl.DataFrame())
-        if ranked.is_empty():
-            selected_sku = None
-        if selected_sku:
-            st.session_state.dashboard_selected_sku = selected_sku
-        else:
-            st.session_state.pop("dashboard_selected_sku", None)
-        _set_deep_link(category, as_of, selected_sku)
-    with tabs[1]:
-        selected_sku = st.session_state.get("dashboard_selected_sku")
-        if selected_sku:
-            _message_block(
-                "Chi tiết SKU bị lỗi",
-                lambda: _render_detail(
-                    category,
-                    cfg,
-                    alerts,
-                    data.priority_table(
-                        alerts,
-                        as_of,
-                        int(limit),
-                        step_days=cfg.default.time.step_days,
-                    ),
-                    selected_sku,
-                    as_of,
-                ),
+    except FileNotFoundError:
+        nlp = pl.DataFrame()
+
+    rows, metrics = data.overview_metrics(clean, nlp, alerts, latest_date)
+    st.caption(
+        f"{category} · 7 ngày gần nhất đến {latest_date.isoformat()} · "
+        "Review hợp lệ không gồm review bị gắn cờ spam."
+    )
+    metric_columns = st.columns(4)
+    metric_columns[0].metric("Số đánh giá hợp lệ", f"{metrics['valid_reviews']:,}")
+    metric_columns[1].metric("Rủi ro cao", metrics["high_risk"])
+    metric_columns[2].metric("Rủi ro trung bình", metrics["medium_risk"])
+    negative_pct = metrics["negative_sentiment_pct"]
+    metric_columns[3].metric(
+        "Tỉ lệ đánh giá tiêu cực",
+        f"{negative_pct:.1%}" if negative_pct is not None else "—",
+        help="Tính trên review hợp lệ có sentiment_score trong NLP features.",
+    )
+
+    if not rows:
+        st.info(f"Chưa có review hoặc cảnh báo cho {category}.")
+        return
+
+    saved_summaries = (
+        _message_block(
+            "Không đọc được khuyến nghị đã lưu",
+            lambda: data.recommendation_summaries(cfg, category),
+        )
+        or {}
+    )
+    api_recommendations = st.session_state.get("dashboard_api_recommendations", {})
+
+    def pct(value: float | None) -> str:
+        return f"{value:.1%}" if value is not None else "—"
+
+    def trend_label(value: float | None) -> str:
+        if value is None:
+            return "Chưa đủ dữ liệu"
+        if value > 0.05:
+            return f"↑ Tăng {value * 100:.1f} đpt"
+        if value < -0.05:
+            return f"↓ Giảm {abs(value) * 100:.1f} đpt"
+        return "→ Ổn định"
+
+    display_rows = []
+    for row in rows:
+        window_end = row["window_end"]
+        key = f"{category}:{row['sku']}:{window_end.isoformat()}" if window_end else ""
+        api_result = api_recommendations.get(key)
+        summary = (
+            api_result.get("summary")
+            if api_result
+            else saved_summaries.get((row["sku"], window_end.isoformat()), "")
+            if window_end
+            else ""
+        )
+        display_rows.append(
+            {
+                "SKU / ASIN": row["sku"],
+                "Rating TB": f"{row['avg_rating']:.2f}" if row["avg_rating"] is not None else "—",
+                "Rating 1–2 sao": pct(row["low_rating_pct"]),
+                "Sentiment tiêu cực": pct(row["negative_sentiment_pct"]),
+                "Xu hướng tiêu cực": trend_label(row["negative_trend"]),
+                "Mức rủi ro": row["level"] or "Chưa cảnh báo",
+                "RiskScore": row["score"],
+                "Hành động đề xuất": summary or "Chưa có đề xuất",
+            }
+        )
+
+    selection = st.dataframe(
+        display_rows,
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="product_overview_table",
+        column_config={
+            "RiskScore": st.column_config.ProgressColumn(
+                "RiskScore",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.2f",
+                help="Điểm ưu tiên kiểm tra, không phải xác suất khủng hoảng.",
+            ),
+            "Hành động đề xuất": st.column_config.TextColumn("Hành động đề xuất", width="large"),
+        },
+    )
+    selected_rows = selection.selection.rows if selection and selection.selection else []
+    selected = rows[selected_rows[0]] if selected_rows else None
+    can_request = bool(selected and selected["level"] == "HIGH" and api_url)
+    if st.button(
+        "Lấy đề xuất từ API",
+        disabled=not can_request,
+        help="Chọn một dòng HIGH trong bảng để tạo đề xuất." if not can_request else None,
+    ):
+        assert selected is not None and selected["alert"] is not None
+        try:
+            pack = data.build_api_evidence_pack(cfg, selected["alert"])
+            response = httpx.post(
+                f"{api_url}/api/v1/analyze-risk",
+                json=pack.model_dump(mode="json"),
+                timeout=60,
+            )
+            response.raise_for_status()
+            recommendation = RecommendationOutput.model_validate(response.json())
+            if (
+                recommendation.sku != selected["sku"]
+                or recommendation.category != category
+                or recommendation.window_end != selected["window_end"].isoformat()
+            ):
+                raise ValueError("API trả khuyến nghị không khớp với SKU/cửa sổ đã chọn.")
+            result_key = f"{category}:{recommendation.sku}:{recommendation.window_end}"
+            st.session_state.setdefault("dashboard_api_recommendations", {})[result_key] = (
+                recommendation.model_dump(mode="json")
+            )
+            st.rerun()
+        except (httpx.HTTPError, ValueError) as exc:
+            st.error(f"Không thể lấy đề xuất từ API: {exc}")
+
+    if selected and selected["level"] == "HIGH" and selected["window_end"]:
+        selected_key = f"{category}:{selected['sku']}:{selected['window_end'].isoformat()}"
+        recommendation = api_recommendations.get(selected_key)
+        if recommendation:
+            _render_recommendation(
+                {
+                    "status": "ok",
+                    "recommendation": recommendation,
+                    "is_fallback": recommendation["is_fallback"],
+                }
             )
         else:
-            st.info("Chọn một SKU trong danh sách ưu tiên ở tab Tổng quan.")
-    system_tab_index = 2
-    if show_verification:
-        with tabs[2]:
-            _message_block("Tab Kiểm chứng bị lỗi", lambda: _verification_tab(category, cfg))
-        system_tab_index = 3
-    with tabs[system_tab_index]:
-        _message_block(
-            "Tab Về hệ thống bị lỗi",
-            lambda: _system_tab(cfg, category, alerts, latest_date),
-        )
+            saved = data.load_recommendation(cfg, category, selected["sku"], selected["window_end"])
+            if saved["status"] == "ok":
+                _render_recommendation(saved)
+
+    st.caption(
+        "Xu hướng so sánh tỉ lệ sentiment âm 7 ngày hiện tại với 7 ngày trước đó. "
+        "Mức “Chưa cảnh báo” nghĩa là chưa có alert MEDIUM/HIGH được lưu."
+    )
 
 
 if __name__ == "__main__":
